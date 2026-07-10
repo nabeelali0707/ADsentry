@@ -6,7 +6,9 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pandas as pd
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status, Depends
+
+from app.core.auth import get_current_profile, get_contract_for_profile
 
 from app.core.supabase_client import get_supabase_client
 from app.models.schemas import BroadcastLogUploadResponse, ContractUploadResponse
@@ -101,6 +103,7 @@ def _storage_path(prefix: str, filename: str | None) -> str:
 async def upload_contract(
     organization_id: UUID = Form(...),
     file: UploadFile = File(...),
+    current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, Any]:
     file_bytes = await file.read()
     df = _read_upload_dataframe(file, file_bytes, allow_xlsx=True)
@@ -110,6 +113,13 @@ async def upload_contract(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"missing_unmapped_columns": ["At least one contract row is required."]},
+        )
+
+    # Ensure the organization matches the authenticated user's organization
+    if str(current_profile.get("organization_id")) != str(organization_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot upload contract for a different organization.",
         )
 
     parsed_row = _clean_record(df.loc[0, CONTRACT_COLUMNS].to_dict())
@@ -150,6 +160,7 @@ async def upload_contract(
 async def upload_broadcast_logs(
     contract_id: UUID,
     file: UploadFile = File(...),
+    current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, int]:
     file_bytes = await file.read()
     df = _read_upload_dataframe(file, file_bytes, allow_xlsx=False)
@@ -157,6 +168,9 @@ async def upload_broadcast_logs(
 
     if df.empty:
         return {"inserted_count": 0}
+
+    # Ensure the contract belongs to the authenticated user's organization
+    get_contract_for_profile(contract_id, current_profile)
 
     raw_upload_path = upload_file(
         "broadcast-logs",

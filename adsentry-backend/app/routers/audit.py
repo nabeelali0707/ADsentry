@@ -2,26 +2,23 @@ from collections import Counter
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+
+from app.core.auth import get_current_profile, get_contract_for_profile
 
 from app.core.supabase_client import get_supabase_client
 from app.services.audit_report_service import compute_audit_report
 from app.services.reconciliation_service import run_reconciliation
 
 
-router = APIRouter(prefix="/contracts", tags=["audit"])
+router = APIRouter(prefix="/contracts", tags=["audit"], dependencies=[Depends(get_current_profile)])
 
 
 def _fetch_contract(contract_id: UUID) -> dict[str, Any]:
-    response = (
-        get_supabase_client()
-        .table("contracts")
-        .select("*")
-        .eq("id", str(contract_id))
-        .single()
-        .execute()
-    )
-    if not response.data:
+    # Use helper to ensure contract belongs to the authenticated user's organization
+    contract = get_contract_for_profile(contract_id, get_current_profile())
+    return contract
+    # The get_contract_for_profile call will raise appropriate HTTP errors if not found or unauthorized
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Contract not found.",

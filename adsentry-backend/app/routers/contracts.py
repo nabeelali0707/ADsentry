@@ -2,13 +2,14 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 
 from app.core.supabase_client import get_supabase_client
+from app.core.auth import get_current_profile, require_role, get_contract_for_profile
 from app.models.schemas import ContractDetailResponse, ContractUpdate
 
 
-router = APIRouter(prefix="/contracts", tags=["contracts"])
+router = APIRouter(prefix="/contracts", tags=["contracts"], dependencies=[Depends(get_current_profile)])
 
 EDITABLE_FIELDS = {
     "channel",
@@ -65,8 +66,8 @@ def _campaign_summary(contract: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/{contract_id}", response_model=ContractDetailResponse)
-def get_contract(contract_id: UUID) -> dict[str, Any]:
-    contract = _get_contract(contract_id)
+def get_contract(contract_id: UUID, current_profile: dict = Depends(get_current_profile)) -> dict[str, Any]:
+    contract = get_contract_for_profile(contract_id, current_profile)
     return {
         "contract": contract,
         "campaign_summary": _campaign_summary(contract),
@@ -74,8 +75,8 @@ def get_contract(contract_id: UUID) -> dict[str, Any]:
 
 
 @router.patch("/{contract_id}", response_model=ContractDetailResponse)
-def update_contract(contract_id: UUID, payload: ContractUpdate) -> dict[str, Any]:
-    contract = _get_contract(contract_id)
+def update_contract(contract_id: UUID, payload: ContractUpdate, current_profile: dict = Depends(get_current_profile)) -> dict[str, Any]:
+    contract = get_contract_for_profile(contract_id, current_profile)
 
     if contract.get("status") != "DRAFT":
         raise HTTPException(
@@ -139,8 +140,8 @@ def update_contract(contract_id: UUID, payload: ContractUpdate) -> dict[str, Any
 
 
 @router.post("/{contract_id}/confirm", response_model=ContractDetailResponse)
-def confirm_contract(contract_id: UUID) -> dict[str, Any]:
-    contract = _get_contract(contract_id)
+def confirm_contract(contract_id: UUID, current_profile: dict = Depends(require_role("BRAND", "AGENCY"))) -> dict[str, Any]:
+    contract = get_contract_for_profile(contract_id, current_profile)
 
     if contract.get("status") == "CONFIRMED":
         raise HTTPException(

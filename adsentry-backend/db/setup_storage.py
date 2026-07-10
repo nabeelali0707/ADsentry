@@ -29,6 +29,14 @@ BUCKETS = {
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ],
     },
+    "reports": {
+        "public": False,
+        "file_size_limit": 20 * 1024 * 1024,
+        "allowed_mime_types": [
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ],
+    },
 }
 
 
