@@ -8,9 +8,13 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
 
     supabase_url: str = ""
+    supabase_project_id: str = ""
+    supabase_publishable_key: str = ""
     supabase_service_role_key: str = ""
     supabase_anon_key: str = ""
     groq_api_key: str = ""
+    database_url: str = ""
+    direct_url: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
