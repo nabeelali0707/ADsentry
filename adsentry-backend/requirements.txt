@@ -9,3 +9,4 @@ groq
 openpyxl
 reportlab
 python-dotenv
+psycopg2-binary
