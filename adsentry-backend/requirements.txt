@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+supabase
+pandas
+numpy
+python-multipart
+pydantic-settings
+groq
+openpyxl
+reportlab
+python-dotenv
