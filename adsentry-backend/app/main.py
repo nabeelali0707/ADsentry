@@ -2,7 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.routers import audit
 from app.routers import contracts
+from app.routers import dashboard
 from app.routers import upload
 
 
@@ -27,3 +29,5 @@ def health_check() -> dict[str, str]:
 
 app.include_router(upload.router)
 app.include_router(contracts.router)
+app.include_router(audit.router)
+app.include_router(dashboard.router)
