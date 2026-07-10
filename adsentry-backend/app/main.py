@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.routers import ai_summary
 from app.routers import audit
 from app.routers import contracts
 from app.routers import dashboard
@@ -31,3 +32,4 @@ app.include_router(upload.router)
 app.include_router(contracts.router)
 app.include_router(audit.router)
 app.include_router(dashboard.router)
+app.include_router(ai_summary.router)
