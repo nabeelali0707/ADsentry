@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.routers import contracts
+from app.routers import upload
 
 
 app = FastAPI(
@@ -21,3 +23,7 @@ app.add_middleware(
 @app.get("/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+
+app.include_router(upload.router)
+app.include_router(contracts.router)
