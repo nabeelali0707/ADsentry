@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@theme {
+  --color-navy-950: #030712;
+  --color-navy-900: #0b1329;
+  --color-navy-800: #1c2541;
+  --color-navy-700: #3a506b;
+  --color-teal-accent: #14b8a6;
+  --color-emerald-accent: #10b981;
+  --animate-fade-in: fade-in 0.3s ease-out forwards;
+  --animate-slide-up: slide-up 0.4s ease-out forwards;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+:root {
+  --background: #050811;
+  --foreground: #f8fafc;
+  --card: #0b1329;
+  --card-foreground: #f8fafc;
+  --popover: #0b1329;
+  --popover-foreground: #f8fafc;
+  --primary: #14b8a6;
+  --primary-foreground: #030712;
+  --secondary: #1c2541;
+  --secondary-foreground: #f8fafc;
+  --muted: #3a506b;
+  --muted-foreground: #94a3b8;
+  --accent: #10b981;
+  --accent-foreground: #030712;
+  --destructive: #ef4444;
+  --destructive-foreground: #f8fafc;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #14b8a6;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom styling for sleek premium scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #050811;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1c2541;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #14b8a6;
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  background: rgba(11, 19, 41, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-card {
+  background: rgba(28, 37, 65, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(20, 184, 166, 0.3);
+  box-shadow: 0 10px 30px -10px rgba(20, 184, 166, 0.15);
+}
