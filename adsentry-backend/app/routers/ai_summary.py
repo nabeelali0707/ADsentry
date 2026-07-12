@@ -62,6 +62,27 @@ def create_ai_summary(contract_id: UUID) -> dict[str, str]:
 
     return {"summary": summary}
 
+@router.get("/{contract_id}/ai-summary")
+def get_ai_summary(contract_id: UUID) -> dict[str, str]:
+    contract_id_str = str(contract_id)
+    # Verify contract exists
+    _ = _fetch_contract(contract_id_str)
+    audit_report_resp = (
+        get_supabase_client()
+        .table("audit_reports")
+        .select("*")
+        .eq("contract_id", contract_id_str)
+        .single()
+        .execute()
+    )
+    if not audit_report_resp.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AI summary not found.",
+        )
+    summary = audit_report_resp.data.get("ai_summary_text", "")
+    return {"summary": summary}
+
 
 @router.post("/{contract_id}/ai-summary/ask")
 def ask_ai_summary_question(

@@ -70,7 +70,7 @@ def compute_audit_report(contract_id: str) -> dict:
         response = (
             supabase.table("audit_reports")
             .update(payload)
-            .eq("id", existing[0]["id"])
+            .eq("contract_id", contract_id)
             .execute()
         )
     else:
