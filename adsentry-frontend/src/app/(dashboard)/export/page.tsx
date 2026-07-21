@@ -244,7 +244,7 @@ export default function ExportPage() {
             </div>
             <div>
               <p className="text-[10px] text-slate-450 uppercase tracking-widest font-semibold font-semibold">Delivered Airings</p>
-              <p className="text-2xl font-black text-white mt-1">111 / {activeContract.contracted_airings}</p>
+              <p className="text-2xl font-black text-white mt-1">{activeReport.total_delivered ?? activeContract.contracted_airings} / {activeContract.contracted_airings}</p>
             </div>
             <div>
               <p className="text-[10px] text-slate-450 uppercase tracking-widest font-semibold">Total Discrepancies</p>

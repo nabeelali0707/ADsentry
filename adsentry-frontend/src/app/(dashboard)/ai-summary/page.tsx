@@ -40,6 +40,8 @@ export default function AiSummaryPage() {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+  /** AI Summary Performance (5.2): generation time from X-Generation-Time-Ms header */
+  const [generationTimeMs, setGenerationTimeMs] = useState<number | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -50,6 +52,7 @@ export default function AiSummaryPage() {
     try {
       const res = await api.createAiSummary(activeContract.id);
       setSummary(res.summary);
+      if (res.generationTimeMs) setGenerationTimeMs(res.generationTimeMs);
       // Initialize chat with AI greeting
       setChatHistory([
         {
@@ -159,13 +162,21 @@ export default function AiSummaryPage() {
             <Bot className="h-5 w-5 text-teal-accent" />
             Executive Narrative Summary
           </h3>
-          <button 
-            onClick={() => handleCopyText(summary)}
-            className="p-1.5 rounded-lg border border-slate-850 hover:bg-slate-900 text-slate-400 hover:text-white transition-colors"
-            title="Copy Summary"
-          >
-            {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* AI Summary Performance (5.2): generation time badge */}
+            {generationTimeMs !== null && (
+              <span className="text-[10px] px-2 py-1 rounded-full bg-teal-accent/10 border border-teal-500/20 text-teal-400 font-bold flex items-center gap-1">
+                ⚡ {generationTimeMs < 1000 ? `${generationTimeMs}ms` : `${(generationTimeMs / 1000).toFixed(1)}s`}
+              </span>
+            )}
+            <button 
+              onClick={() => handleCopyText(summary)}
+              className="p-1.5 rounded-lg border border-slate-850 hover:bg-slate-900 text-slate-400 hover:text-white transition-colors"
+              title="Copy Summary"
+            >
+              {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
         <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line select-text">
           {summary}

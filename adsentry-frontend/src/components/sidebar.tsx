@@ -126,7 +126,7 @@ export default function Sidebar() {
                 <p className="text-sm font-semibold text-white truncate">{userProfile.full_name}</p>
                 <div className="flex items-center gap-1 text-[10px] text-slate-400">
                   <Building2 className="h-3 w-3" />
-                  <span className="truncate">{userProfile.role} - National Foods</span>
+                  <span className="truncate">{userProfile.role}{userProfile.organization_id ? ` · ${userProfile.organization_id.slice(0, 8).toUpperCase()}` : ''}</span>
                 </div>
               </div>
             </div>

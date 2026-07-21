@@ -3,8 +3,9 @@ from typing import Any
 from uuid import UUID
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
+from app.core.cache import cache_get, cache_set
 from app.core.supabase_client import get_supabase_client
 from app.services.audit_report_service import compute_audit_report
 
@@ -17,6 +18,10 @@ DISCREPANCY_TYPES = {
     "OUT_OF_SLOT",
     "DUPLICATE_BILLED",
 }
+
+# Dashboard cache TTL: 2 minutes (Performance 5.2: Dashboard Load < 2s)
+_DASHBOARD_TTL = 120
+_FINANCIAL_TTL = 120
 
 
 def _fetch_contract(contract_id: str) -> dict[str, Any]:
@@ -61,7 +66,22 @@ def _fetch_broadcast_logs(contract_id: str) -> list[dict[str, Any]]:
 
 
 @router.get("/contracts/{contract_id}/dashboard")
-def get_dashboard(contract_id: UUID) -> dict[str, Any]:
+def get_dashboard(contract_id: UUID, response: Response) -> dict[str, Any]:
+    """
+    Dashboard Load < 2 seconds (Performance 5.2):
+    Results are cached in-process for _DASHBOARD_TTL seconds.
+    Cache is invalidated by POST /run-audit.
+    Response includes X-Cache header (HIT|MISS) for observability.
+    """
+    cache_key = f"dashboard:{contract_id}"
+    hit, cached = cache_get(cache_key)
+    if hit:
+        response.headers["X-Cache"] = "HIT"
+        response.headers["Cache-Control"] = f"private, max-age={_DASHBOARD_TTL}"
+        return cached
+
+    response.headers["X-Cache"] = "MISS"
+
     contract_id_str = str(contract_id)
     contract = _fetch_contract(contract_id_str)
     discrepancies = _fetch_discrepancies(contract_id_str)
@@ -105,7 +125,7 @@ def get_dashboard(contract_id: UUID) -> dict[str, Any]:
         ]
         channel_group = discrepancy_df.groupby("channel", dropna=False).agg(
             financial_impact=("financial_impact", "sum"),
-            discrepancies=('type','count'),
+            discrepancies=("type", "count"),
         )
         channel_breakdown = [
             {
@@ -132,7 +152,7 @@ def get_dashboard(contract_id: UUID) -> dict[str, Any]:
     if compliance_rate <= 0:
         compliance_rate = 0.1
 
-    return {
+    result = {
         "compliance_ring": {
             "rate": compliance_rate,
             "status": report["compliance_status"],
@@ -147,9 +167,21 @@ def get_dashboard(contract_id: UUID) -> dict[str, Any]:
         "channel_breakdown": channel_breakdown,
     }
 
+    cache_set(cache_key, result, ttl=_DASHBOARD_TTL)
+    response.headers["Cache-Control"] = f"private, max-age={_DASHBOARD_TTL}"
+    return result
+
 
 @router.get("/contracts/{contract_id}/financial-impact")
-def get_financial_impact(contract_id: UUID) -> dict[str, Any]:
+def get_financial_impact(contract_id: UUID, response: Response) -> dict[str, Any]:
+    """Financial impact data with TTL caching."""
+    cache_key = f"financial:{contract_id}"
+    hit, cached = cache_get(cache_key)
+    if hit:
+        response.headers["X-Cache"] = "HIT"
+        return cached
+
+    response.headers["X-Cache"] = "MISS"
     discrepancies = _fetch_discrepancies(str(contract_id))
     if not discrepancies:
         return {
@@ -165,7 +197,7 @@ def get_financial_impact(contract_id: UUID) -> dict[str, Any]:
         totals_by_type[item.get("type") or "UNKNOWN"] += impact
         totals_by_channel[item.get("channel") or "UNKNOWN"] += impact
 
-    return {
+    result = {
         "total_overpayment": round(sum(totals_by_type.values()), 2),
         "loss_by_type": [
             {"type": key, "financial_impact": round(value, 2)}
@@ -176,6 +208,9 @@ def get_financial_impact(contract_id: UUID) -> dict[str, Any]:
             for key, value in totals_by_channel.items()
         ],
     }
+
+    cache_set(cache_key, result, ttl=_FINANCIAL_TTL)
+    return result
 
 
 @router.get("/contracts/{contract_id}/discrepancies")

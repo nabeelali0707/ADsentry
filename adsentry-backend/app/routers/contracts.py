@@ -18,6 +18,8 @@ EDITABLE_FIELDS = {
     "contracted_airings",
     "spot_duration_sec",
     "cost_per_airing",
+    # Discrepancy Detection Accuracy (5.2): configurable duration tolerance
+    "duration_tolerance_pct",
 }
 
 

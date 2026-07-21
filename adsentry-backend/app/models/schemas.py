@@ -26,6 +26,8 @@ class ContractOut(ContractCreate):
     created_by: UUID | None = None
     time_window_tolerance_minutes: int | None = None
     compliance_threshold_pct: Decimal | None = None
+    # Discrepancy Detection Accuracy (5.2): configurable duration tolerance
+    duration_tolerance_pct: Decimal | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -62,6 +64,8 @@ class ContractUpdate(BaseModel):
     contracted_airings: int | None = None
     spot_duration_sec: int | None = None
     cost_per_airing: Decimal | None = None
+    # Discrepancy Detection Accuracy (5.2): allows UI slider to persist tolerance
+    duration_tolerance_pct: Decimal | None = None
     corrected_by: UUID | None = None
 
 

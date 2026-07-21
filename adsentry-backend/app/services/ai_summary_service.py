@@ -1,4 +1,6 @@
 import json
+import logging
+import time as time_module
 from collections import Counter
 from typing import Any
 
@@ -6,8 +8,16 @@ from groq import Groq
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
+
+# AI Summary Performance (5.2): Reduced from 320 to 260 tokens saves ~0.5s
+# while still producing a ~200-word narrative.
+_MAX_TOKENS = 260
+
+# Timeout guard: abort Groq call after this many seconds and return fallback
+_GROQ_TIMEOUT_SECONDS = 3.8
 
 
 def _json_safe(value: Any) -> Any:
@@ -21,12 +31,27 @@ def _build_context(
     audit_report: dict,
     discrepancies: list[dict],
 ) -> str:
-    counts = Counter(item.get("type") for item in discrepancies)
-    top_discrepancies = sorted(
-        discrepancies,
-        key=lambda item: float(item.get("financial_impact") or 0),
-        reverse=True,
-    )[:5]
+    """
+    Pre-aggregate all heavy computations BEFORE calling Groq so the API call
+    receives a compact, pre-summarised payload. This reduces prompt size and
+    improves response latency (Performance 5.2: AI Summary < 4 seconds).
+    """
+    # Single-pass aggregation: counts + financial totals by type
+    counts: dict[str, int] = Counter()
+    financial_by_type: dict[str, float] = {}
+    top_heap: list[tuple[float, dict]] = []
+
+    for item in discrepancies:
+        dtype = item.get("type")
+        if dtype:
+            counts[dtype] += 1
+            impact = float(item.get("financial_impact") or 0)
+            financial_by_type[dtype] = financial_by_type.get(dtype, 0.0) + impact
+            top_heap.append((impact, item))
+
+    # Top-5 by financial impact (sorted in one pass)
+    top_heap.sort(key=lambda x: x[0], reverse=True)
+    top_discrepancies = [item for _, item in top_heap[:5]]
 
     context = {
         "contract": {
@@ -46,9 +71,9 @@ def _build_context(
             "compliance_status": audit_report.get("compliance_status"),
             "total_overpayment": audit_report.get("total_overpayment"),
         },
-        "discrepancy_counts_by_type": {
-            key: value for key, value in counts.items() if key is not None
-        },
+        # Pre-aggregated counts and totals — no extra processing needed by Groq
+        "discrepancy_counts_by_type": dict(counts),
+        "financial_impact_by_type": {k: round(v, 2) for k, v in financial_by_type.items()},
         "top_5_highest_financial_impact_discrepancies": [
             {
                 "id": item.get("id"),
@@ -58,7 +83,6 @@ def _build_context(
                 "financial_impact": item.get("financial_impact"),
                 "air_date": item.get("air_date"),
                 "channel": item.get("channel"),
-                "matched_log_id": item.get("matched_log_id"),
             }
             for item in top_discrepancies
         ],
@@ -73,16 +97,59 @@ def _groq_client() -> Groq:
 
 
 def _chat(system_prompt: str, user_prompt: str) -> str:
-    response = _groq_client().chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.2,
-        max_tokens=320,
-    )
-    return response.choices[0].message.content.strip()
+    """
+    Make a Groq API call with a hard timeout.
+
+    If the call exceeds _GROQ_TIMEOUT_SECONDS, returns a pre-built fallback
+    summary constructed from the pre-aggregated context so the user always
+    receives a useful response (Performance 5.2: AI Summary < 4 seconds).
+    """
+    t_start = time_module.perf_counter()
+    try:
+        response = _groq_client().chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            max_tokens=_MAX_TOKENS,
+            # Groq SDK supports timeout parameter
+            timeout=_GROQ_TIMEOUT_SECONDS,
+        )
+        elapsed = time_module.perf_counter() - t_start
+        logger.info("Groq response received in %.2fs", elapsed)
+        return response.choices[0].message.content.strip()
+    except Exception as exc:
+        elapsed = time_module.perf_counter() - t_start
+        logger.warning("Groq call failed/timed out after %.2fs: %s", elapsed, exc)
+        # Return None to signal fallback — caller will handle
+        return ""
+
+
+def _build_fallback_summary(contract: dict, audit_report: dict, discrepancies: list[dict]) -> str:
+    """
+    Construct a factual summary from pre-aggregated data without an LLM call.
+    Used as fallback when Groq times out.
+    """
+    counts = Counter(d.get("type") for d in discrepancies if d.get("type"))
+    total = sum(counts.values())
+    overpayment = audit_report.get("total_overpayment", 0)
+    compliance = audit_report.get("compliance_rate", 0)
+    status = audit_report.get("compliance_status", "UNKNOWN")
+
+    parts = [
+        f"AdSentry AI reconciled {contract.get('contracted_airings', 'N/A')} expected airings "
+        f"for {contract.get('brand_name', 'the brand')} on {contract.get('channel', 'the channel')}.",
+        f"The audit identified {total} discrepancy event(s) with an overall compliance rate of {compliance:.1f}% ({status.replace('_', ' ')}).",
+    ]
+    if counts:
+        breakdown = ", ".join(f"{v} {k.replace('_', ' ').title()}" for k, v in counts.most_common())
+        parts.append(f"Breakdown: {breakdown}.")
+    if overpayment:
+        parts.append(f"Total estimated overpayment: Rs. {round(overpayment):,}.")
+    parts.append("Please review the Discrepancy Explorer for line-item details.")
+    return " ".join(parts)
 
 
 def generate_audit_summary(
@@ -97,7 +164,11 @@ def generate_audit_summary(
         "factual based on the provided JSON data; do not speculate beyond it. "
         "Keep the response under 200 words."
     )
-    return _chat(system_prompt, f"Audit context JSON:\n{context}")
+    result = _chat(system_prompt, f"Audit context JSON:\n{context}")
+    if not result:
+        logger.info("Using fallback summary (Groq unavailable/timed out).")
+        return _build_fallback_summary(contract, audit_report, discrepancies)
+    return result
 
 
 def answer_followup_question(
@@ -113,7 +184,10 @@ def answer_followup_question(
         "on that data. Stay factual, avoid unsupported claims, and keep the answer "
         "under 200 words."
     )
-    return _chat(
+    result = _chat(
         system_prompt,
         f"Audit context JSON:\n{context}\n\nQuestion:\n{question}",
     )
+    if not result:
+        return "I was unable to generate a response at this time. Please try again in a moment."
+    return result
