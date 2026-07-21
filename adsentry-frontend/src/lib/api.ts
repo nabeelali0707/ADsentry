@@ -444,6 +444,50 @@ export const api = {
     return { summary: result.summary, generationTimeMs };
   },
 
+  /**
+   * 4.6 PRD: 'Response is streamed into the summary panel'
+   * Streams AI summary text chunks from backend using ReadableStream.
+   * In mock mode: simulates word-by-word streaming with a 40ms delay per word.
+   */
+  streamAiSummary: async (
+    contractId: string,
+    onChunk: (chunk: string, fullSoFar: string) => void,
+    onDone: (fullText: string, timeMs: number) => void,
+  ): Promise<void> => {
+    const startTime = Date.now();
+    if (USE_MOCK_DATA) {
+      const report = mockAuditReports[contractId] || mockAuditReports[DEFAULT_CONTRACT_ID];
+      const text = report.ai_summary_text || '';
+      const words = text.split(' ');
+      let accumulated = '';
+      for (const word of words) {
+        await delay(35);
+        const chunk = (accumulated ? ' ' : '') + word;
+        accumulated += chunk;
+        onChunk(chunk, accumulated);
+      }
+      onDone(text, Date.now() - startTime);
+      return;
+    }
+    const token = await getSessionToken();
+    const response = await fetch(`${API_BASE_URL}/contracts/${contractId}/ai-summary/stream`, {
+      method: 'GET',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok || !response.body) throw new Error('AI summary streaming failed.');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      fullText += chunk;
+      onChunk(chunk, fullText);
+    }
+    onDone(fullText, Date.now() - startTime);
+  },
+
   // POST /contracts/{contract_id}/ai-summary/ask
   askAiQuestion: async (contractId: string, question: string): Promise<{ answer: string }> => {
     if (USE_MOCK_DATA) {

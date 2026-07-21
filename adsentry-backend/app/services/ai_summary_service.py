@@ -2,7 +2,7 @@ import json
 import logging
 import time as time_module
 from collections import Counter
-from typing import Any
+from typing import Any, Generator
 
 from groq import Groq
 
@@ -169,6 +169,51 @@ def generate_audit_summary(
         logger.info("Using fallback summary (Groq unavailable/timed out).")
         return _build_fallback_summary(contract, audit_report, discrepancies)
     return result
+
+
+def stream_audit_summary(
+    contract: dict,
+    audit_report: dict,
+    discrepancies: list[dict],
+) -> Generator[str, None, None]:
+    """
+    Generator that streams AI summary text chunks directly from Groq.
+    (4.6 PRD: 'Response is streamed into the summary panel')
+
+    Falls back to yielding the pre-built factual fallback in a single chunk
+    if the Groq API key is missing or the call fails.
+    """
+    if not settings.groq_api_key:
+        logger.warning("GROQ_API_KEY not set — yielding fallback summary.")
+        yield _build_fallback_summary(contract, audit_report, discrepancies)
+        return
+
+    context = _build_context(contract, audit_report, discrepancies)
+    system_prompt = (
+        "You are an advertising audit analyst. Explain the headline compliance "
+        "result and biggest drivers of loss in plain language. Stay strictly "
+        "factual based on the provided JSON data; do not speculate beyond it. "
+        "Keep the response under 200 words."
+    )
+    try:
+        stream = _groq_client().chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Audit context JSON:\n{context}"},
+            ],
+            temperature=0.2,
+            max_tokens=_MAX_TOKENS,
+            stream=True,
+            timeout=_GROQ_TIMEOUT_SECONDS,
+        )
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+    except Exception as exc:
+        logger.warning("Groq streaming failed: %s", exc)
+        yield _build_fallback_summary(contract, audit_report, discrepancies)
 
 
 def answer_followup_question(

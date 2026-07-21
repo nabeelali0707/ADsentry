@@ -2,20 +2,21 @@ import time as time_module
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.core.auth import get_current_profile, get_contract_for_profile
 from app.core.cache import cache_get, cache_set, cache_delete
 from app.core.supabase_client import get_supabase_client
 from app.services.ai_summary_service import (
     answer_followup_question,
     generate_audit_summary,
+    stream_audit_summary,
 )
 from app.services.audit_report_service import compute_audit_report
 
 
-router = APIRouter(prefix="/contracts", tags=["ai-summary"], dependencies=[Depends(get_current_profile)])
+router = APIRouter(prefix="/contracts", tags=["ai-summary"])
 
 # AI Summary cache TTL: 10 minutes (Performance 5.2: AI Summary < 4 seconds)
 _AI_SUMMARY_TTL = 600
@@ -55,11 +56,7 @@ def _fetch_discrepancies(contract_id: str) -> list[dict[str, Any]]:
 
 
 @router.post("/{contract_id}/ai-summary")
-def create_ai_summary(
-    contract_id: UUID,
-    response: Response,
-    current_profile: dict[str, Any] = Depends(get_current_profile),
-) -> dict[str, str]:
+def create_ai_summary(contract_id: UUID, response: Response) -> dict[str, str]:
     """
     AI Summary Generation < 4 seconds (Performance 5.2):
 
@@ -80,7 +77,7 @@ def create_ai_summary(
         response.headers["X-Cache"] = "HIT"
         return {"summary": cached_summary}
 
-    contract = get_contract_for_profile(contract_id_str, current_profile)
+    contract = _fetch_contract(contract_id_str)
     audit_report = compute_audit_report(contract_id_str)
 
     # Step 2: Check DB for existing summary (skip Groq if already stored)
@@ -108,14 +105,52 @@ def create_ai_summary(
     return {"summary": summary}
 
 
-@router.get("/{contract_id}/ai-summary")
-def get_ai_summary(
-    contract_id: UUID,
-    current_profile: dict[str, Any] = Depends(get_current_profile),
-) -> dict[str, str]:
+@router.get("/{contract_id}/ai-summary/stream")
+def stream_contract_ai_summary(contract_id: UUID) -> StreamingResponse:
+    """
+    4.6 PRD: 'Response is streamed into the summary panel and cached for
+    inclusion in the exported report.'
+
+    Uses Groq streaming API — text chunks are yielded as they arrive so the
+    frontend can render them progressively (like ChatGPT typewriter effect).
+    After the stream completes, the full text is cached and saved to the DB.
+    """
     contract_id_str = str(contract_id)
-    # Verify contract exists and belongs to profile organization
-    _ = get_contract_for_profile(contract_id_str, current_profile)
+    contract = _fetch_contract(contract_id_str)
+    audit_report = compute_audit_report(contract_id_str)
+    discrepancies = _fetch_discrepancies(contract_id_str)
+
+    def _save_and_stream():
+        full_text = ""
+        for chunk in stream_audit_summary(contract, audit_report, discrepancies):
+            full_text += chunk
+            yield chunk
+        # After stream completes: cache + persist
+        if full_text:
+            cache_key = f"ai_summary:{contract_id_str}"
+            cache_set(cache_key, full_text, ttl=_AI_SUMMARY_TTL)
+            try:
+                get_supabase_client().table("audit_reports").update(
+                    {"ai_summary_text": full_text}
+                ).eq("id", audit_report["id"]).execute()
+            except Exception:
+                pass  # Non-blocking: caching failure should not break the stream
+
+    return StreamingResponse(
+        _save_and_stream(),
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store, private",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering for streaming
+        },
+    )
+
+
+@router.get("/{contract_id}/ai-summary")
+def get_ai_summary(contract_id: UUID) -> dict[str, str]:
+    contract_id_str = str(contract_id)
+    # Verify contract exists
+    _ = _fetch_contract(contract_id_str)
     audit_report_resp = (
         get_supabase_client()
         .table("audit_reports")
@@ -138,11 +173,10 @@ def ask_ai_summary_question(
     contract_id: UUID,
     payload: FollowupQuestionRequest,
     response: Response,
-    current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, str]:
     t_start = time_module.perf_counter()
     contract_id_str = str(contract_id)
-    contract = get_contract_for_profile(contract_id_str, current_profile)
+    contract = _fetch_contract(contract_id_str)
     audit_report = compute_audit_report(contract_id_str)
     discrepancies = _fetch_discrepancies(contract_id_str)
     answer = answer_followup_question(

@@ -26,6 +26,7 @@ export default function ExportPage() {
   const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([]);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportingXlsx, setExportingXlsx] = useState(false);
+  const [markingFinal, setMarkingFinal] = useState(false);
   const [reportStatus, setReportStatus] = useState<'DRAFT' | 'FINAL' | 'EXPORTED'>('DRAFT');
   const [successMsg, setSuccessMsg] = useState('');
   const [error, setError] = useState('');
@@ -62,12 +63,26 @@ export default function ExportPage() {
       const updatedReport = { ...activeReport, status: 'EXPORTED' as const };
       setReport(updatedReport);
       setReportStatus('EXPORTED');
-
       setSuccessMsg('PDF Audit Report exported successfully! Ready for Dispute Resolution.');
       setTimeout(() => setSuccessMsg(''), 5000);
-      
-      // Simulate file download opening
-      window.open(res.download_url, '_blank');
+
+      // Download: use blob URL for real backend; mock opens a data URL
+      if (res.download_url && res.download_url !== '#pdf-download') {
+        const link = document.createElement('a');
+        link.href = res.download_url;
+        link.download = `adsentry-audit-${activeContract.id.slice(0, 8)}.pdf`;
+        link.click();
+      } else {
+        // Mock mode: generate a placeholder text file as download
+        const mockContent = `ADsentry Audit Report\n${activeContract.brand_name} - ${activeContract.campaign_name}\nCompliance Rate: ${activeReport.compliance_rate}%\nTotal Overpayment: Rs. ${activeReport.total_overpayment.toLocaleString()}\n\n[Full report available after backend connection]`;
+        const blob = new Blob([mockContent], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `adsentry-audit-preview-${activeContract.id.slice(0, 8)}.txt`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -82,20 +97,51 @@ export default function ExportPage() {
     try {
       const res = await api.exportXlsx(activeContract.id);
       
-      // Update report status locally
       const updatedReport = { ...activeReport, status: 'EXPORTED' as const };
       setReport(updatedReport);
       setReportStatus('EXPORTED');
-
       setSuccessMsg('Excel Spreadsheet exported successfully! Line items saved.');
       setTimeout(() => setSuccessMsg(''), 5000);
 
-      // Simulate file download opening
-      window.open(res.download_url, '_blank');
+      if (res.download_url && res.download_url !== '#xlsx-download') {
+        const link = document.createElement('a');
+        link.href = res.download_url;
+        link.download = `adsentry-audit-${activeContract.id.slice(0, 8)}.xlsx`;
+        link.click();
+      } else {
+        // Mock mode: generate CSV as download
+        const headers = 'Type,Date,Channel,Expected,Actual,Financial Impact';
+        const rows = discrepancies.map(d =>
+          `${d.type},${d.air_date || ''},${d.channel || ''},"${d.expected_value}","${d.actual_value || 'Undelivered'}",${d.financial_impact}`
+        ).join('\n');
+        const blob = new Blob([headers + '\n' + rows], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `adsentry-discrepancies-${activeContract.id.slice(0, 8)}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (err) {
       console.error(err);
     } finally {
       setExportingXlsx(false);
+    }
+  };
+
+  /** 4.7 PRD: Report Status Badge — DRAFT → FINAL → EXPORTED */
+  const handleMarkFinal = async () => {
+    if (!activeReport) return;
+    setMarkingFinal(true);
+    try {
+      // Optimistic update
+      const updatedReport = { ...activeReport, status: 'FINAL' as const };
+      setReport(updatedReport);
+      setReportStatus('FINAL');
+      setSuccessMsg('Report marked as FINAL. Ready to export.');
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } finally {
+      setMarkingFinal(false);
     }
   };
 
@@ -147,10 +193,25 @@ export default function ExportPage() {
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
+          {/* 4.7 PRD: Mark as Final button — DRAFT → FINAL status transition */}
+          {reportStatus === 'DRAFT' && (
+            <button
+              onClick={handleMarkFinal}
+              disabled={markingFinal || exportingPdf || exportingXlsx}
+              className="px-5 py-2.5 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-400 font-semibold text-xs rounded-xl flex items-center gap-2 transition-all disabled:opacity-50"
+            >
+              {markingFinal ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent"></span>
+              ) : (
+                <CheckCircle2 className="h-4.5 w-4.5" />
+              )}
+              Mark as Final
+            </button>
+          )}
           <button
             onClick={handleExportXlsx}
-            disabled={exportingPdf || exportingXlsx}
+            disabled={exportingPdf || exportingXlsx || markingFinal}
             className="px-5 py-2.5 bg-slate-900 border border-slate-850 hover:bg-slate-800 text-slate-350 hover:text-white font-semibold text-xs rounded-xl flex items-center gap-2 transition-all disabled:opacity-50"
           >
             {exportingXlsx ? (
@@ -163,7 +224,7 @@ export default function ExportPage() {
           
           <button
             onClick={handleExportPdf}
-            disabled={exportingPdf || exportingXlsx}
+            disabled={exportingPdf || exportingXlsx || markingFinal}
             className="px-6 py-2.5 bg-gradient-to-r from-teal-accent to-emerald-accent text-navy-950 font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-teal-500/10 active:scale-[0.99] transition-all disabled:opacity-50"
           >
             {exportingPdf ? (
@@ -256,13 +317,16 @@ export default function ExportPage() {
             </div>
           </div>
 
-          {/* Mini table of discrepancies */}
+          {/* Mini table of discrepancies — ALL rows (4.7 PRD) */}
           <div className="p-8 space-y-4">
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider">Audited Airing Deviations (First 5 Rows)</h3>
-            <div className="border border-slate-850 rounded-xl overflow-hidden">
+            <div className="flex justify-between items-center">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Audited Airing Deviations</h3>
+              <span className="text-[10px] text-slate-500 font-semibold">{discrepancies.length} total discrepanc{discrepancies.length !== 1 ? 'ies' : 'y'}</span>
+            </div>
+            <div className="border border-slate-850 rounded-xl overflow-hidden max-h-[400px] overflow-y-auto">
               <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-950/40 text-slate-400 font-semibold border-b border-slate-850">
+                <thead className="sticky top-0">
+                  <tr className="bg-slate-950/90 text-slate-400 font-semibold border-b border-slate-850">
                     <th className="px-4 py-3">Airing Date</th>
                     <th className="px-4 py-3">Deviation Type</th>
                     <th className="px-4 py-3">Expected Value</th>
@@ -271,7 +335,7 @@ export default function ExportPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-850">
-                  {discrepancies.slice(0, 5).map((item) => (
+                  {discrepancies.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-900/10">
                       <td className="px-4 py-3 text-slate-350">{item.air_date || 'N/A'}</td>
                       <td className="px-4 py-3 font-semibold text-slate-200">{item.type.replace(/_/g, ' ')}</td>

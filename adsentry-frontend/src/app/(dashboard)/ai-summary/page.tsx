@@ -12,9 +12,9 @@ import {
   UserCircle, 
   RefreshCw, 
   HelpCircle,
-  Mail,
   Copy,
-  Check
+  Check,
+  Zap
 } from 'lucide-react';
 
 interface ChatMessage {
@@ -31,16 +31,17 @@ const SUGGESTED_QUESTIONS = [
 
 export default function AiSummaryPage() {
   const router = useRouter();
-  const { activeContract } = useAuditStore();
+  const { activeContract, userProfile } = useAuditStore();
 
   const [loading, setLoading] = useState(true);
+  const [streaming, setStreaming] = useState(false);
   const [summary, setSummary] = useState('');
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
-  /** AI Summary Performance (5.2): generation time from X-Generation-Time-Ms header */
+  /** AI Summary Performance (5.2): generation time from streaming */
   const [generationTimeMs, setGenerationTimeMs] = useState<number | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -48,21 +49,38 @@ export default function AiSummaryPage() {
   const fetchSummary = async () => {
     if (!activeContract) return;
     setLoading(true);
+    setStreaming(true);
     setError('');
+    setSummary('');
+    setGenerationTimeMs(null);
+
     try {
-      const res = await api.createAiSummary(activeContract.id);
-      setSummary(res.summary);
-      if (res.generationTimeMs) setGenerationTimeMs(res.generationTimeMs);
-      // Initialize chat with AI greeting
-      setChatHistory([
-        {
-          sender: 'ai',
-          text: `Hello, Ayesha. I have completed the media compliance audit for **${activeContract.campaign_name}** campaign. Reconciled logs indicate a **${activeContract.compliance_threshold_pct}%** baseline breach. How can I assist you with contract reconciliations or broadcaster claims today?`,
-          timestamp: new Date(),
-        }
-      ]);
+      // 4.6 PRD: "Response is streamed into the summary panel"
+      await api.streamAiSummary(
+        activeContract.id,
+        // onChunk: update displayed text as chunks arrive (typewriter effect)
+        (_chunk, fullSoFar) => {
+          setLoading(false);
+          setSummary(fullSoFar);
+        },
+        // onDone: show generation time badge, initialize chat
+        (fullText, timeMs) => {
+          setStreaming(false);
+          setGenerationTimeMs(timeMs);
+          setSummary(fullText);
+          const displayName = userProfile?.full_name || 'there';
+          setChatHistory([
+            {
+              sender: 'ai',
+              text: `Hello, ${displayName}. I have completed the media compliance audit for **${activeContract.campaign_name}**. How can I assist you with contract reconciliations or broadcaster claims today?`,
+              timestamp: new Date(),
+            }
+          ]);
+        },
+      );
     } catch (err: any) {
       setError(err.message || 'Failed to generate AI summary narrative.');
+      setStreaming(false);
     } finally {
       setLoading(false);
     }
@@ -80,7 +98,6 @@ export default function AiSummaryPage() {
   const handleAsk = async (textToSend: string) => {
     if (!activeContract || !textToSend.trim() || asking) return;
     
-    // Add user message
     const userMsg: ChatMessage = {
       sender: 'user',
       text: textToSend,
@@ -93,13 +110,11 @@ export default function AiSummaryPage() {
 
     try {
       const res = await api.askAiQuestion(activeContract.id, textToSend);
-      
       const aiMsg: ChatMessage = {
         sender: 'ai',
         text: res.answer,
         timestamp: new Date(),
       };
-      
       setChatHistory(prev => [...prev, aiMsg]);
     } catch (err) {
       console.error('Failed to ask AI question', err);
@@ -129,7 +144,7 @@ export default function AiSummaryPage() {
     );
   }
 
-  if (loading) {
+  if (loading && !summary) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-teal-accent gap-3">
         <RefreshCw className="h-8 w-8 animate-spin" />
@@ -161,15 +176,22 @@ export default function AiSummaryPage() {
           <h3 className="text-md font-bold text-white flex items-center gap-2">
             <Bot className="h-5 w-5 text-teal-accent" />
             Executive Narrative Summary
+            {/* 4.6: Streaming indicator */}
+            {streaming && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-accent/10 border border-teal-500/20 text-teal-400 font-semibold animate-pulse">
+                ● Streaming...
+              </span>
+            )}
           </h3>
           <div className="flex items-center gap-2">
             {/* AI Summary Performance (5.2): generation time badge */}
-            {generationTimeMs !== null && (
+            {generationTimeMs !== null && !streaming && (
               <span className="text-[10px] px-2 py-1 rounded-full bg-teal-accent/10 border border-teal-500/20 text-teal-400 font-bold flex items-center gap-1">
-                ⚡ {generationTimeMs < 1000 ? `${generationTimeMs}ms` : `${(generationTimeMs / 1000).toFixed(1)}s`}
+                <Zap className="h-3 w-3" />
+                {generationTimeMs < 1000 ? `${generationTimeMs}ms` : `${(generationTimeMs / 1000).toFixed(1)}s`}
               </span>
             )}
-            <button 
+            <button
               onClick={() => handleCopyText(summary)}
               className="p-1.5 rounded-lg border border-slate-850 hover:bg-slate-900 text-slate-400 hover:text-white transition-colors"
               title="Copy Summary"
@@ -178,9 +200,23 @@ export default function AiSummaryPage() {
             </button>
           </div>
         </div>
+
+        {/* Streaming text with blinking cursor */}
         <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line select-text">
           {summary}
+          {streaming && (
+            <span className="inline-block w-[2px] h-[14px] bg-teal-accent ml-0.5 align-middle animate-[blink_1s_step-end_infinite]" />
+          )}
         </p>
+
+        {!streaming && (
+          <button
+            onClick={fetchSummary}
+            className="text-xs text-slate-500 hover:text-teal-accent flex items-center gap-1.5 transition-colors"
+          >
+            <RefreshCw className="h-3 w-3" /> Regenerate
+          </button>
+        )}
       </div>
 
       {/* Interactive Q&A chat panel */}
@@ -243,7 +279,7 @@ export default function AiSummaryPage() {
             <button
               key={q}
               onClick={() => handleAsk(q)}
-              disabled={asking}
+              disabled={asking || streaming}
               className="px-3 py-1.5 rounded-lg border border-slate-800 hover:border-teal-500/30 bg-slate-900 hover:bg-slate-800/80 text-[11px] text-slate-350 hover:text-white transition-all disabled:opacity-50"
             >
               {q}
@@ -260,13 +296,13 @@ export default function AiSummaryPage() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAsk(question);
             }}
-            disabled={asking}
+            disabled={asking || streaming}
             placeholder="Ask AI about this audit... (e.g. 'draft a dispute email')"
             className="flex-1 px-4 py-3 bg-slate-950 border border-slate-850 focus:border-teal-accent/50 focus:ring-1 focus:ring-teal-accent/50 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none transition-all disabled:opacity-50"
           />
           <button
             onClick={() => handleAsk(question)}
-            disabled={asking || !question.trim()}
+            disabled={asking || !question.trim() || streaming}
             className="px-5 bg-gradient-to-r from-teal-accent to-emerald-accent text-navy-950 font-bold rounded-xl flex items-center justify-center transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none"
           >
             <Send className="h-4 w-4" />
