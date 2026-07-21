@@ -2,9 +2,10 @@ import time as time_module
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 
+from app.core.auth import get_current_profile, get_contract_for_profile
 from app.core.cache import cache_get, cache_set, cache_delete
 from app.core.supabase_client import get_supabase_client
 from app.services.ai_summary_service import (
@@ -14,7 +15,7 @@ from app.services.ai_summary_service import (
 from app.services.audit_report_service import compute_audit_report
 
 
-router = APIRouter(prefix="/contracts", tags=["ai-summary"])
+router = APIRouter(prefix="/contracts", tags=["ai-summary"], dependencies=[Depends(get_current_profile)])
 
 # AI Summary cache TTL: 10 minutes (Performance 5.2: AI Summary < 4 seconds)
 _AI_SUMMARY_TTL = 600
@@ -54,7 +55,11 @@ def _fetch_discrepancies(contract_id: str) -> list[dict[str, Any]]:
 
 
 @router.post("/{contract_id}/ai-summary")
-def create_ai_summary(contract_id: UUID, response: Response) -> dict[str, str]:
+def create_ai_summary(
+    contract_id: UUID,
+    response: Response,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> dict[str, str]:
     """
     AI Summary Generation < 4 seconds (Performance 5.2):
 
@@ -75,7 +80,7 @@ def create_ai_summary(contract_id: UUID, response: Response) -> dict[str, str]:
         response.headers["X-Cache"] = "HIT"
         return {"summary": cached_summary}
 
-    contract = _fetch_contract(contract_id_str)
+    contract = get_contract_for_profile(contract_id_str, current_profile)
     audit_report = compute_audit_report(contract_id_str)
 
     # Step 2: Check DB for existing summary (skip Groq if already stored)
@@ -104,10 +109,13 @@ def create_ai_summary(contract_id: UUID, response: Response) -> dict[str, str]:
 
 
 @router.get("/{contract_id}/ai-summary")
-def get_ai_summary(contract_id: UUID) -> dict[str, str]:
+def get_ai_summary(
+    contract_id: UUID,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> dict[str, str]:
     contract_id_str = str(contract_id)
-    # Verify contract exists
-    _ = _fetch_contract(contract_id_str)
+    # Verify contract exists and belongs to profile organization
+    _ = get_contract_for_profile(contract_id_str, current_profile)
     audit_report_resp = (
         get_supabase_client()
         .table("audit_reports")
@@ -130,10 +138,11 @@ def ask_ai_summary_question(
     contract_id: UUID,
     payload: FollowupQuestionRequest,
     response: Response,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, str]:
     t_start = time_module.perf_counter()
     contract_id_str = str(contract_id)
-    contract = _fetch_contract(contract_id_str)
+    contract = get_contract_for_profile(contract_id_str, current_profile)
     audit_report = compute_audit_report(contract_id_str)
     discrepancies = _fetch_discrepancies(contract_id_str)
     answer = answer_followup_question(

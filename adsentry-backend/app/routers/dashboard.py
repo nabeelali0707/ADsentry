@@ -3,14 +3,15 @@ from typing import Any
 from uuid import UUID
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+from app.core.auth import get_current_profile, get_contract_for_profile
 from app.core.cache import cache_get, cache_set
 from app.core.supabase_client import get_supabase_client
 from app.services.audit_report_service import compute_audit_report
 
 
-router = APIRouter(tags=["dashboard"])
+router = APIRouter(tags=["dashboard"], dependencies=[Depends(get_current_profile)])
 
 DISCREPANCY_TYPES = {
     "MISSED",
@@ -66,7 +67,12 @@ def _fetch_broadcast_logs(contract_id: str) -> list[dict[str, Any]]:
 
 
 @router.get("/contracts/{contract_id}/dashboard")
-def get_dashboard(contract_id: UUID, response: Response) -> dict[str, Any]:
+def get_dashboard(
+    contract_id: UUID,
+    response: Response,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> dict[str, Any]:
+    get_contract_for_profile(contract_id, current_profile)
     """
     Dashboard Load < 2 seconds (Performance 5.2):
     Results are cached in-process for _DASHBOARD_TTL seconds.
@@ -173,8 +179,13 @@ def get_dashboard(contract_id: UUID, response: Response) -> dict[str, Any]:
 
 
 @router.get("/contracts/{contract_id}/financial-impact")
-def get_financial_impact(contract_id: UUID, response: Response) -> dict[str, Any]:
+def get_financial_impact(
+    contract_id: UUID,
+    response: Response,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> dict[str, Any]:
     """Financial impact data with TTL caching."""
+    get_contract_for_profile(contract_id, current_profile)
     cache_key = f"financial:{contract_id}"
     hit, cached = cache_get(cache_key)
     if hit:
@@ -219,7 +230,9 @@ def list_discrepancies(
     type: str | None = Query(default=None),
     sort_by: str = Query(default="created_at"),
     order: str = Query(default="desc"),
+    current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> list[dict[str, Any]]:
+    get_contract_for_profile(contract_id, current_profile)
     query = (
         get_supabase_client()
         .table("discrepancies")
@@ -239,7 +252,10 @@ def list_discrepancies(
 
 
 @router.get("/discrepancies/{discrepancy_id}")
-def get_discrepancy(discrepancy_id: UUID) -> dict[str, Any]:
+def get_discrepancy(
+    discrepancy_id: UUID,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> dict[str, Any]:
     discrepancy_response = (
         get_supabase_client()
         .table("discrepancies")
@@ -255,7 +271,7 @@ def get_discrepancy(discrepancy_id: UUID) -> dict[str, Any]:
         )
 
     discrepancy = discrepancy_response.data
-    contract = _fetch_contract(discrepancy["contract_id"])
+    contract = get_contract_for_profile(discrepancy["contract_id"], current_profile)
     broadcast_log = None
     if discrepancy.get("matched_log_id"):
         broadcast_response = (
