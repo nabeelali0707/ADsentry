@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ContractCreate(BaseModel):
@@ -67,6 +67,14 @@ class ContractUpdate(BaseModel):
     # Discrepancy Detection Accuracy (5.2): allows UI slider to persist tolerance
     duration_tolerance_pct: Decimal | None = None
     corrected_by: UUID | None = None
+
+    @field_validator("duration_tolerance_pct")
+    @classmethod
+    def validate_duration_tolerance(cls, v: Decimal | None) -> Decimal | None:
+        if v is not None:
+            if v < Decimal("0.70") or v > Decimal("0.99"):
+                raise ValueError("duration_tolerance_pct must be between 0.70 and 0.99")
+        return v
 
 
 class CampaignSummary(BaseModel):

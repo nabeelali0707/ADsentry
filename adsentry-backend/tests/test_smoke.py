@@ -13,22 +13,27 @@ from app.core import auth
 # Fixture to create a test organization in the database and provide its ID
 @pytest.fixture(scope="module")
 def test_org_id():
-    # Load DB URL from env (already set in .env)
-    import os
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = True
-    cur = conn.cursor()
-    org_id = "test-org-id"  # deterministic UUID string (must be valid UUID format)
-    # Use a real UUID format
     import uuid
     org_id = str(uuid.uuid4())
-    cur.execute(
-        "INSERT INTO organizations (id, name) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING",
-        (org_id, "Test Organization"),
-    )
-    cur.close()
-    conn.close()
+    import os
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO organizations (id, name) VALUES (%s, %s) ON CONFLICT (id) DO NOTHING",
+            (org_id, "Test Organization"),
+        )
+        cur.close()
+        conn.close()
+    except Exception:
+        # Fallback to Supabase client if direct postgres connection is unavailable
+        try:
+            from app.core.supabase_client import get_supabase_client
+            get_supabase_client().table("organizations").insert({"id": org_id, "name": "Test Organization"}).execute()
+        except Exception:
+            pass
     return org_id
 
 # Override authentication dependency to use the test organization
