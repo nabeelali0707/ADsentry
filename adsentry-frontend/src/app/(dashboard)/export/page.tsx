@@ -249,9 +249,9 @@ export default function ExportPage() {
           {/* Header invoice details */}
           <div className="p-8 border-b border-slate-800 bg-slate-950/65 flex flex-col sm:flex-row justify-between gap-6">
             <div className="space-y-2">
-              <span className="text-2xl font-black text-white tracking-tight">
-                AdSentry <span className="text-teal-accent">AI</span>
-              </span>
+              <div className="inline-block bg-white rounded-xl p-2">
+                <img src="/logo-full.png" alt="AdSentry AI" className="h-7 w-auto" />
+              </div>
               <p className="text-xs text-slate-450 uppercase tracking-widest font-semibold">Media Audit Compliance Certificate</p>
               <div className="flex items-center gap-1.5 text-xs text-slate-400 pt-2">
                 <Building className="h-4 w-4 text-teal-accent" />

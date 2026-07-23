@@ -62,10 +62,13 @@ export default function Sidebar() {
     <>
       {/* Mobile Header Bar */}
       <header className="md:hidden w-full flex items-center justify-between px-4 py-3 bg-navy-950/80 backdrop-blur-md border-b border-slate-850 sticky top-0 z-50">
-        <span className="text-xl font-bold tracking-tight text-white">
-          AdSentry <span className="text-teal-accent">AI</span>
+        <span className="flex items-center gap-2">
+          <img src="/logo-icon.png" alt="AdSentry" className="h-8 w-8 rounded-lg shrink-0" />
+          <span className="text-xl font-bold tracking-tight text-white">
+            AdSentry <span className="text-teal-accent">AI</span>
+          </span>
         </span>
-        <button 
+        <button
           onClick={() => setIsOpen(!isOpen)}
           className="p-1 text-slate-400 hover:text-white focus:outline-none"
         >
@@ -80,12 +83,15 @@ export default function Sidebar() {
         ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
         <div>
-          {/* Brand Plain Text Wordmark */}
+          {/* Brand Logo + Wordmark */}
           <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
-            <span className="text-2xl font-bold tracking-tight text-white">
-              AdSentry <span className="text-teal-accent font-extrabold">AI</span>
+            <span className="flex items-center gap-2.5 min-w-0">
+              <img src="/logo-icon.png" alt="AdSentry" className="h-9 w-9 rounded-lg shrink-0" />
+              <span className="text-2xl font-bold tracking-tight text-white truncate">
+                AdSentry <span className="text-teal-accent font-extrabold">AI</span>
+              </span>
             </span>
-            <button className="md:hidden p-1 text-slate-400 hover:text-white" onClick={() => setIsOpen(false)}>
+            <button className="md:hidden p-1 text-slate-400 hover:text-white shrink-0" onClick={() => setIsOpen(false)}>
               <X className="h-5 w-5" />
             </button>
           </div>

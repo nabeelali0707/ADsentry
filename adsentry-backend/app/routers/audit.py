@@ -11,22 +11,22 @@ from app.services.audit_report_service import compute_audit_report
 from app.services.reconciliation_service import run_reconciliation
 
 
-router = APIRouter(prefix="/contracts", tags=["audit"])
+router = APIRouter(prefix="/contracts", tags=["audit"], dependencies=[Depends(get_current_profile)])
 
 
 @router.post("/{contract_id}/run-audit")
-def run_audit(contract_id: UUID) -> dict[str, Any]:
+def run_audit(
+    contract_id: UUID,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> dict[str, Any]:
     """
     Run the reconciliation engine against uploaded broadcast logs.
 
     Performance 5.2: After generating discrepancies, invalidates the dashboard
     and financial-impact TTL cache keys so the next GET returns fresh data.
     """
+    contract = get_contract_for_profile(contract_id, current_profile)
     supabase = get_supabase_client()
-    contract_resp = supabase.table("contracts").select("*").eq("id", str(contract_id)).single().execute()
-    contract = contract_resp.data
-    if not contract:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contract not found.")
 
     logs = (
         supabase.table("broadcast_logs")

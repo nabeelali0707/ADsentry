@@ -1,5 +1,6 @@
 from collections import Counter, defaultdict
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -7,10 +8,12 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.core.supabase_client import get_supabase_client
 from app.services.audit_report_service import compute_audit_report
+
+_LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
 
 
 def _fetch_contract(contract_id: str) -> dict[str, Any]:
@@ -120,8 +123,13 @@ def export_pdf(contract_id: str) -> bytes:
         bottomMargin=0.5 * inch,
     )
     styles = getSampleStyleSheet()
-    story = [
-        Paragraph("ADsentry Audit Report", styles["Title"]),
+    story: list[Any] = []
+    if _LOGO_PATH.exists():
+        story.append(Image(str(_LOGO_PATH), width=2.2 * inch, height=0.826 * inch))
+        story.append(Spacer(1, 0.12 * inch))
+    else:
+        story.append(Paragraph("AdSentry Audit Report", styles["Title"]))
+    story.extend([
         Paragraph(f"{contract.get('brand_name', '')} - {contract.get('campaign_name', '')}", styles["Heading2"]),
         Spacer(1, 0.16 * inch),
         _table(_summary_rows(contract, audit_report, discrepancies), [2.0 * inch, 4.3 * inch]),
@@ -137,7 +145,7 @@ def export_pdf(contract_id: str) -> bytes:
         Spacer(1, 0.22 * inch),
         Paragraph("Discrepancies", styles["Heading2"]),
         _table(_discrepancy_rows(discrepancies), [1.0 * inch, 0.75 * inch, 0.85 * inch, 1.35 * inch, 1.35 * inch, 0.75 * inch, 1.1 * inch]),
-    ]
+    ])
     doc.build(story)
     return buffer.getvalue()
 

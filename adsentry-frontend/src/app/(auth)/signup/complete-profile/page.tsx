@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import { supabase } from '@/lib/supabase';
 import { bootstrapProfile } from '@/lib/auth';
-import { ShieldCheck, ArrowRight, User, Briefcase, Building } from 'lucide-react';
+import { ArrowRight, User, Briefcase, Building } from 'lucide-react';
 
 const PENDING_PROFILE_KEY = 'adsentry_pending_profile';
 
@@ -89,9 +89,7 @@ export default function CompleteProfilePage() {
         <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-emerald-accent/10 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="text-center">
-          <div className="inline-flex p-3 bg-teal-accent/10 rounded-xl text-teal-accent mb-3 border border-teal-500/20">
-            <ShieldCheck className="h-6 w-6" />
-          </div>
+          <img src="/logo-icon.png" alt="AdSentry" className="h-16 w-16 rounded-2xl mx-auto mb-3 shadow-lg shadow-teal-500/10" />
           <h2 className="text-3xl font-extrabold text-white tracking-tight">
             Complete Your Profile
           </h2>

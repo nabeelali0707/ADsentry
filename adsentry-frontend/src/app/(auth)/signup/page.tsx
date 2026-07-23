@@ -7,7 +7,7 @@ import { useAuditStore } from '@/store/useAuditStore';
 import { signUpWithEmail, bootstrapProfile, mapAuthErrorMessage } from '@/lib/auth';
 import Button from '@/components/ui/Button';
 import ErrorBanner from '@/components/ui/ErrorBanner';
-import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock, User, Briefcase, Building } from 'lucide-react';
+import { Sparkles, ArrowRight, Mail, Lock, User, Briefcase, Building } from 'lucide-react';
 
 const PENDING_PROFILE_KEY = 'adsentry_pending_profile';
 
@@ -82,9 +82,7 @@ export default function SignupPage() {
         <div className="absolute -bottom-16 -right-16 w-32 h-32 bg-emerald-accent/10 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="text-center">
-          <div className="inline-flex p-3 bg-teal-accent/10 rounded-xl text-teal-accent mb-3 border border-teal-500/20">
-            <ShieldCheck className="h-6 w-6" />
-          </div>
+          <img src="/logo-icon.png" alt="AdSentry" className="h-16 w-16 rounded-2xl mx-auto mb-3 shadow-lg shadow-teal-500/10" />
           <h2 className="text-3xl font-extrabold text-white tracking-tight">
             Register Account
           </h2>

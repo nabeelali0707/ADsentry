@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import Sidebar from '@/components/sidebar';
 import PageTransition from '@/components/PageTransition';
+import ChatWidget from '@/components/ChatWidget';
 
 export default function DashboardLayout({
   children,
@@ -26,6 +27,7 @@ export default function DashboardLayout({
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-navy-950 text-teal-accent">
         <div className="flex flex-col items-center gap-3">
+          <img src="/logo-icon.png" alt="AdSentry" className="h-12 w-12 rounded-xl animate-pulse-glow" />
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-700 border-t-teal-accent"></div>
           <span className="text-sm font-medium tracking-wide">Loading AdSentry...</span>
         </div>
@@ -46,6 +48,9 @@ export default function DashboardLayout({
           <PageTransition>{children}</PageTransition>
         </div>
       </main>
+
+      {/* Persistent floating AI chat — mounted once so it survives route changes */}
+      <ChatWidget />
     </div>
   );
 }

@@ -101,9 +101,10 @@ def get_dashboard(
     )
 
     discrepancy_df = pd.DataFrame(discrepancies)
+    contracted_airings = int(contract["contracted_airings"])
+
     if discrepancy_df.empty:
         weekly_trend = []
-        channel_breakdown = []
     else:
         discrepancy_df["air_date"] = pd.to_datetime(discrepancy_df["air_date"], errors="coerce")
         discrepancy_df["financial_impact"] = pd.to_numeric(
@@ -121,38 +122,51 @@ def get_dashboard(
             {
                 "week_start": week,
                 "compliance_rate": round(
-                    max(0, (int(contract["contracted_airings"]) - count) / int(contract["contracted_airings"]) * 100),
+                    max(0, (contracted_airings - count) / contracted_airings * 100),
                     2,
                 )
-                if int(contract["contracted_airings"]) > 0
+                if contracted_airings > 0
                 else 0,
             }
             for week, count in weekly_counts.items()
         ]
+
+    # Channel Breakdown (4.3 PRD): every channel the campaign actually touched —
+    # via the contract, the broadcast logs, or the discrepancies — must appear
+    # here, even ones with zero discrepancies (100% compliant), otherwise a
+    # clean campaign or a multi-channel campaign with one clean channel renders
+    # an empty chart.
+    all_channels: set[str] = set()
+    if contract.get("channel"):
+        all_channels.add(contract["channel"])
+    all_channels.update(log["channel"] for log in logs if log.get("channel"))
+    all_channels.update(item["channel"] for item in discrepancies if item.get("channel"))
+
+    if discrepancy_df.empty:
+        channel_group = pd.DataFrame(columns=["financial_impact", "discrepancies"])
+    else:
         channel_group = discrepancy_df.groupby("channel", dropna=False).agg(
             financial_impact=("financial_impact", "sum"),
             discrepancies=("type", "count"),
         )
-        channel_breakdown = [
+
+    channel_breakdown = []
+    for channel in sorted(all_channels):
+        row = channel_group.loc[channel] if channel in channel_group.index else None
+        channel_discrepancies = int(row["discrepancies"]) if row is not None else 0
+        channel_financial_impact = float(row["financial_impact"]) if row is not None else 0.0
+        channel_breakdown.append(
             {
                 "channel": channel,
                 "compliance_rate": round(
-                    max(
-                        0,
-                        (
-                            int(contract["contracted_airings"]) - int(row["discrepancies"])
-                        )
-                        / int(contract["contracted_airings"])
-                        * 100,
-                    ),
+                    max(0, (contracted_airings - channel_discrepancies) / contracted_airings * 100),
                     2,
                 )
-                if int(contract["contracted_airings"]) > 0
+                if contracted_airings > 0
                 else 0,
-                "financial_impact": round(float(row["financial_impact"]), 2),
+                "financial_impact": round(channel_financial_impact, 2),
             }
-            for channel, row in channel_group.iterrows()
-        ]
+        )
 
     compliance_rate = report.get("compliance_rate", 0)
     if compliance_rate <= 0:

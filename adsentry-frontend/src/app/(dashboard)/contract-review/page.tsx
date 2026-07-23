@@ -7,6 +7,7 @@ import { api, formatPKR, Contract, AuditCorrection } from '@/lib/api';
 import Button from '@/components/ui/Button';
 import { Card, CardTitle } from '@/components/ui/Card';
 import ErrorBanner from '@/components/ui/ErrorBanner';
+import ReconciliationReplay from '@/components/ReconciliationReplay';
 import {
   FileText, 
   HelpCircle, 
@@ -34,6 +35,7 @@ export default function ContractReviewPage() {
   const [runningAudit, setRunningAudit] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [showReplay, setShowReplay] = useState(false);
 
   // Editable fields
   const [channel, setChannel] = useState('');
@@ -152,7 +154,7 @@ export default function ContractReviewPage() {
       await api.confirmContract(activeContract.id);
       const auditRes = await api.runAudit(activeContract.id);
       setReport(auditRes.audit_report);
-      router.push('/dashboard');
+      setShowReplay(true);
     } catch (err: any) {
       setErrorMsg(err.message || 'Reconciliation failed to run.');
     } finally {
@@ -409,6 +411,16 @@ export default function ContractReviewPage() {
         </div>
 
       </div>
+
+      {showReplay && (
+        <ReconciliationReplay
+          contractId={activeContract.id}
+          startDate={activeContract.start_date}
+          endDate={activeContract.end_date}
+          contractedAirings={activeContract.contracted_airings}
+          onComplete={() => router.push('/dashboard')}
+        />
+      )}
     </div>
   );
 }

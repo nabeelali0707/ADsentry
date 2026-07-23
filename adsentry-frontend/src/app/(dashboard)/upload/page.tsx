@@ -50,6 +50,84 @@ function estimateRowCount(file: File): number {
   return Math.round(file.size / ESTIMATED_BYTES_PER_ROW);
 }
 
+/**
+ * Inline column-mapping prompt (PRD 4.1: "missing/renamed columns trigger
+ * an inline mapping prompt"). Lets the user tell AdSentry which header in
+ * their file corresponds to each required column AdSentry couldn't find
+ * by exact name.
+ */
+function ColumnMappingPrompt({
+  expectedCols,
+  missingColumns,
+  headers,
+  mapping,
+  onChange,
+  onApply,
+}: {
+  expectedCols: string[];
+  missingColumns: string[];
+  headers: string[];
+  mapping: Record<string, string>;
+  onChange: (expectedCol: string, actualHeader: string) => void;
+  onApply: () => void;
+}) {
+  const matchedLower = expectedCols
+    .filter((c) => !missingColumns.includes(c))
+    .map((c) => c.toLowerCase());
+  const usedHeaders = new Set(Object.values(mapping).filter(Boolean));
+  const allMapped = missingColumns.every((col) => mapping[col]);
+
+  return (
+    <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 space-y-3">
+      <div className="flex items-start gap-2.5 text-amber-400">
+        <AlertTriangle className="h-4.5 w-4.5 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-semibold text-white text-xs">Map missing columns</p>
+          <p className="text-[11px] mt-0.5 text-amber-300/80">
+            {missingColumns.length} required column{missingColumns.length > 1 ? 's' : ''} weren&apos;t found by exact
+            name. Pick which header in your file matches each one.
+          </p>
+        </div>
+      </div>
+      <div className="space-y-2.5">
+        {missingColumns.map((col) => {
+          const options = headers.filter(
+            (h) => !matchedLower.includes(h.toLowerCase()) && (!usedHeaders.has(h) || mapping[col] === h)
+          );
+          return (
+            <div key={col} className="flex items-center gap-3">
+              <span className="w-36 shrink-0 text-[11px] font-mono text-slate-300 truncate" title={col}>
+                {col}
+              </span>
+              <ArrowRight className="h-3.5 w-3.5 text-slate-600 shrink-0" />
+              <select
+                value={mapping[col] || ''}
+                onChange={(e) => onChange(col, e.target.value)}
+                className="flex-1 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white px-2.5 py-2 focus:outline-none focus:border-teal-accent/50"
+              >
+                <option value="">-- Select a column from your file --</option>
+                {options.map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+            </div>
+          );
+        })}
+      </div>
+      <Button
+        variant="secondary"
+        onClick={onApply}
+        disabled={!allMapped}
+        className="w-full text-xs justify-center"
+      >
+        Apply Mapping &amp; Re-validate
+      </Button>
+    </div>
+  );
+}
+
 export default function UploadPage() {
   const router = useRouter();
   const { userProfile, setContract, setReport } = useAuditStore();
@@ -64,14 +142,27 @@ export default function UploadPage() {
   /** File Processing Performance (5.2): shows X-Processing-Time-Ms from backend */
   const [processingTimeMs, setProcessingTimeMs] = useState<number | null>(null);
 
+  /**
+   * Inline column-mapping prompt (PRD 4.1: "missing/renamed columns trigger
+   * an inline mapping prompt"). When a required column isn't found by exact
+   * name, the user maps it to whichever header their file actually uses,
+   * and the header row is rewritten client-side before upload.
+   */
+  const [contractHeaders, setContractHeaders] = useState<string[]>([]);
+  const [contractMissingColumns, setContractMissingColumns] = useState<string[]>([]);
+  const [contractMapping, setContractMapping] = useState<Record<string, string>>({});
+  const [logHeaders, setLogHeaders] = useState<string[]>([]);
+  const [logMissingColumns, setLogMissingColumns] = useState<string[]>([]);
+  const [logMapping, setLogMapping] = useState<Record<string, string>>({});
+
   const logRowEstimate = logFile?.name.endsWith('.csv') ? estimateRowCount(logFile) : null;
   const isLargeFile = logRowEstimate !== null && logRowEstimate > LARGE_FILE_ROW_THRESHOLD;
 
   // Dropzone for contract
-  const { 
-    getRootProps: getContractRootProps, 
+  const {
+    getRootProps: getContractRootProps,
     getInputProps: getContractInputProps,
-    isDragActive: isContractDragActive 
+    isDragActive: isContractDragActive
   } = useDropzone({
     accept: {
       'text/csv': ['.csv'],
@@ -84,16 +175,17 @@ export default function UploadPage() {
         setProcessingTimeMs(null);
         const file = acceptedFiles[0];
         setContractFile(file);
-        validateFileColumns(file, CONTRACT_COLUMNS, setContractValid);
+        setContractMapping({});
+        validateFileColumns(file, CONTRACT_COLUMNS, setContractValid, setContractHeaders, setContractMissingColumns);
       }
     }
   });
 
   // Dropzone for broadcast logs
-  const { 
-    getRootProps: getLogRootProps, 
+  const {
+    getRootProps: getLogRootProps,
     getInputProps: getLogInputProps,
-    isDragActive: isLogDragActive 
+    isDragActive: isLogDragActive
   } = useDropzone({
     accept: {
       'text/csv': ['.csv'],
@@ -105,24 +197,38 @@ export default function UploadPage() {
         setProcessingTimeMs(null);
         const file = acceptedFiles[0];
         setLogFile(file);
-        validateFileColumns(file, BROADCAST_LOG_COLUMNS, setLogValid);
+        setLogMapping({});
+        validateFileColumns(file, BROADCAST_LOG_COLUMNS, setLogValid, setLogHeaders, setLogMissingColumns);
       }
     }
   });
 
-  const validateFileColumns = (file: File, expectedCols: string[], setValidState: (valid: boolean) => void) => {
+  const validateFileColumns = (
+    file: File,
+    expectedCols: string[],
+    setValidState: (valid: boolean) => void,
+    setHeaders: (headers: string[]) => void,
+    setMissing: (missing: string[]) => void,
+  ) => {
     setValidating(true);
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const text = e.target?.result as string;
         if (!text) { setValidState(false); setValidating(false); return; }
-        const firstLine = text.split('\n')[0].toLowerCase().trim();
-        const headers = firstLine.split(',').map(h => h.replace(/["'\r]/g, '').trim());
+        const rawFirstLine = text.split('\n')[0].trim();
+        const rawHeaders = rawFirstLine.split(',').map(h => h.replace(/["'\r]/g, '').trim());
+        const headers = rawHeaders.map(h => h.toLowerCase());
         const missing = expectedCols.filter(col => !headers.includes(col.toLowerCase()));
         if (file.name.endsWith('.xlsx')) {
+          // Column remapping only supported for CSV (header row is plain text);
+          // XLSX validation stays server-side.
+          setHeaders([]);
+          setMissing([]);
           setValidState(true);
         } else {
+          setHeaders(rawHeaders);
+          setMissing(missing);
           setValidState(missing.length === 0);
         }
       } catch (err) {
@@ -135,6 +241,48 @@ export default function UploadPage() {
       reader.readAsText(file.slice(0, 2048));
     } else {
       setTimeout(() => { setValidState(true); setValidating(false); }, 600);
+    }
+  };
+
+  /** Rewrites a CSV's header row using the user-confirmed column mapping. */
+  const applyColumnMapping = async (file: File, mapping: Record<string, string>): Promise<File> => {
+    const text = await file.text();
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n');
+    if (lines.length === 0) return file;
+
+    // Invert: actualHeader (lowercased) -> expectedColumn
+    const inverted: Record<string, string> = {};
+    Object.entries(mapping).forEach(([expectedCol, actualHeader]) => {
+      if (actualHeader) inverted[actualHeader.toLowerCase().trim()] = expectedCol;
+    });
+
+    const headerCells = lines[0].split(',');
+    lines[0] = headerCells
+      .map((cell) => {
+        const clean = cell.replace(/["']/g, '').trim().toLowerCase();
+        return inverted[clean] ?? cell;
+      })
+      .join(',');
+
+    return new File([lines.join('\n')], file.name, { type: file.type || 'text/csv' });
+  };
+
+  const handleApplyMapping = async (which: 'contract' | 'log') => {
+    const file = which === 'contract' ? contractFile : logFile;
+    const mapping = which === 'contract' ? contractMapping : logMapping;
+    const missing = which === 'contract' ? contractMissingColumns : logMissingColumns;
+    if (!file || missing.some((col) => !mapping[col])) return;
+
+    const expectedCols = which === 'contract' ? CONTRACT_COLUMNS : BROADCAST_LOG_COLUMNS;
+    const mappedFile = await applyColumnMapping(file, mapping);
+
+    if (which === 'contract') {
+      setContractFile(mappedFile);
+      validateFileColumns(mappedFile, expectedCols, setContractValid, setContractHeaders, setContractMissingColumns);
+    } else {
+      setLogFile(mappedFile);
+      validateFileColumns(mappedFile, expectedCols, setLogValid, setLogHeaders, setLogMissingColumns);
     }
   };
 
@@ -256,10 +404,10 @@ export default function UploadPage() {
 
           {contractFile && (
             <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5
-              ${contractValid === true 
-                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                : contractValid === false 
-                  ? 'bg-red-500/10 border-red-500/20 text-red-400' 
+              ${contractValid === true
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                : contractValid === false
+                  ? 'bg-red-500/10 border-red-500/20 text-red-400'
                   : 'bg-slate-900 border-slate-800 text-slate-400 animate-pulse'
               }
             `}>
@@ -276,7 +424,11 @@ export default function UploadPage() {
                   <AlertCircle className="h-4.5 w-4.5 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-semibold text-white">Validation Error</p>
-                    <p className="mt-0.5">Missing required columns. Please match the template format headers.</p>
+                    <p className="mt-0.5">
+                      {contractMissingColumns.length > 0
+                        ? `Missing or renamed columns: ${contractMissingColumns.join(', ')}.`
+                        : 'Missing required columns. Please match the template format headers.'}
+                    </p>
                   </div>
                 </>
               ) : (
@@ -286,6 +438,17 @@ export default function UploadPage() {
                 </>
               )}
             </div>
+          )}
+
+          {contractValid === false && contractMissingColumns.length > 0 && contractHeaders.length > 0 && (
+            <ColumnMappingPrompt
+              expectedCols={CONTRACT_COLUMNS}
+              missingColumns={contractMissingColumns}
+              headers={contractHeaders}
+              mapping={contractMapping}
+              onChange={(col, val) => setContractMapping((prev) => ({ ...prev, [col]: val }))}
+              onApply={() => handleApplyMapping('contract')}
+            />
           )}
         </Card>
 
@@ -365,7 +528,11 @@ export default function UploadPage() {
                   <AlertCircle className="h-4.5 w-4.5 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-semibold text-white">Validation Error</p>
-                    <p className="mt-0.5">Missing required columns. Please match the template format headers.</p>
+                    <p className="mt-0.5">
+                      {logMissingColumns.length > 0
+                        ? `Missing or renamed columns: ${logMissingColumns.join(', ')}.`
+                        : 'Missing required columns. Please match the template format headers.'}
+                    </p>
                   </div>
                 </>
               ) : (
@@ -375,6 +542,17 @@ export default function UploadPage() {
                 </>
               )}
             </div>
+          )}
+
+          {logValid === false && logMissingColumns.length > 0 && logHeaders.length > 0 && (
+            <ColumnMappingPrompt
+              expectedCols={BROADCAST_LOG_COLUMNS}
+              missingColumns={logMissingColumns}
+              headers={logHeaders}
+              mapping={logMapping}
+              onChange={(col, val) => setLogMapping((prev) => ({ ...prev, [col]: val }))}
+              onApply={() => handleApplyMapping('log')}
+            />
           )}
         </Card>
 

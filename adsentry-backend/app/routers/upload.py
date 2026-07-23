@@ -11,10 +11,14 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status, De
 
 from app.core.auth import get_current_profile, get_contract_for_profile
 
+import logging
+
 from app.core.supabase_client import get_supabase_client
 from app.models.schemas import BroadcastLogUploadResponse, ContractUploadResponse
-from app.services.storage_service import upload_file
+from app.services.storage_service import delete_file, upload_file
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -116,6 +120,21 @@ def _read_broadcast_log_dataframe_chunked(file_bytes: bytes) -> pd.DataFrame:
     return pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
 
 
+def _purge_raw_upload(bucket: str, path: str) -> None:
+    """
+    Session-Scoped File Handling (Security 5.1): once a file's contents have
+    been parsed and the whitelisted fields persisted to the database, the raw
+    uploaded blob (which may contain non-whitelisted columns) no longer needs
+    to sit in Storage. Delete it immediately rather than waiting for an
+    explicit session cleanup call. Best-effort — a failure here must not fail
+    the upload request, since the DB rows are already the source of truth.
+    """
+    try:
+        delete_file(bucket, path)
+    except Exception as exc:
+        logger.warning("Could not purge raw upload '%s/%s': %s", bucket, path, exc)
+
+
 def _storage_path(prefix: str, filename: str | None) -> str:
     safe_name = Path(filename or "upload").name
     timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
@@ -201,6 +220,10 @@ async def upload_contract(
             detail="Contract could not be created.",
         )
 
+    # Session-Scoped File Handling (5.1): whitelisted fields are now in the DB —
+    # the raw file (which may hold non-whitelisted columns) doesn't need to persist.
+    _purge_raw_upload("contracts", raw_upload_path)
+
     processing_ms = round((time_module.perf_counter() - t_start) * 1000)
     from fastapi.responses import JSONResponse
     content = {"contract": created_contract, "parsed_row": parsed_row}
@@ -264,6 +287,9 @@ async def upload_broadcast_logs(
         .insert(records)
         .execute()
     )
+
+    # Session-Scoped File Handling (5.1): rows are persisted — purge the raw blob.
+    _purge_raw_upload("broadcast-logs", raw_upload_path)
 
     processing_ms = round((time_module.perf_counter() - t_start) * 1000)
     from fastapi.responses import JSONResponse

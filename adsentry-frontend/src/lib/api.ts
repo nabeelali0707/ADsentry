@@ -404,7 +404,7 @@ export const api = {
       return list;
     }
     let url = `${API_BASE_URL}/contracts/${contractId}/discrepancies`;
-    if (type) url += `?type=${type}`;
+    if (type && type !== 'ALL') url += `?type=${type}`;
     const response = await fetch(url, { headers: await getHeaders() });
     if (!response.ok) throw new Error('Failed to retrieve discrepancies.');
     return response.json();
