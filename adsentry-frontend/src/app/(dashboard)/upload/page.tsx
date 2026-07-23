@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useDropzone } from 'react-dropzone';
 import { useAuditStore } from '@/store/useAuditStore';
 import { api } from '@/lib/api';
-import { 
+import Button from '@/components/ui/Button';
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import {
   UploadCloud, 
   FileText, 
   CheckCircle2, 
@@ -146,8 +149,14 @@ export default function UploadPage() {
     setErrorMessage('');
     setProcessingTimeMs(null);
 
+    if (!userProfile?.organization_id) {
+      setErrorMessage('Your session is missing an organization. Please log out and sign in again.');
+      setAuditing(false);
+      return;
+    }
+
     try {
-      const orgId = userProfile?.organization_id || 'o1111111-1111-1111-1111-111111111111';
+      const orgId = userProfile.organization_id;
 
       // Upload Contract
       const uploadRes = await api.uploadContract(orgId, contractFile);
@@ -190,12 +199,7 @@ export default function UploadPage() {
         <p className="text-slate-400 mt-1">Get your signed media plan and broadcaster logs reconciled in minutes.</p>
       </div>
 
-      {errorMessage && (
-        <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl">
-          <AlertCircle className="h-5 w-5 shrink-0" />
-          <p className="text-sm font-medium">{errorMessage}</p>
-        </div>
-      )}
+      <ErrorBanner>{errorMessage}</ErrorBanner>
 
       {/* File Processing Performance Badge (5.2) */}
       {processingTimeMs !== null && (
@@ -209,20 +213,21 @@ export default function UploadPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         
         {/* Contract Upload */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+        <Card className="p-6 space-y-4">
+          <CardHeader>
+            <CardTitle>
               <FileText className="h-5 w-5 text-teal-accent" />
               1. Signed Media Plan / Contract
-            </h3>
-            <button 
+            </CardTitle>
+            <Button
+              variant="ghost"
               onClick={() => downloadSampleTemplate('contract')}
-              className="text-xs text-slate-400 hover:text-teal-accent flex items-center gap-1 transition-colors"
+              className="px-2 py-1 text-xs gap-1"
             >
               <FileSpreadsheet className="h-3.5 w-3.5" />
               Get Template
-            </button>
-          </div>
+            </Button>
+          </CardHeader>
           <p className="text-xs text-slate-400">Supported formats: CSV, Excel (XLSX). Read campaign schedule and cost parameters.</p>
 
           <div 
@@ -282,23 +287,24 @@ export default function UploadPage() {
               )}
             </div>
           )}
-        </div>
+        </Card>
 
         {/* Broadcast Logs Upload */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+        <Card className="p-6 space-y-4">
+          <CardHeader>
+            <CardTitle>
               <UploadCloud className="h-5 w-5 text-teal-accent" />
               2. Broadcaster Airing Logs
-            </h3>
-            <button 
+            </CardTitle>
+            <Button
+              variant="ghost"
               onClick={() => downloadSampleTemplate('log')}
-              className="text-xs text-slate-400 hover:text-teal-accent flex items-center gap-1 transition-colors"
+              className="px-2 py-1 text-xs gap-1"
             >
               <FileSpreadsheet className="h-3.5 w-3.5" />
               Get Template
-            </button>
-          </div>
+            </Button>
+          </CardHeader>
           <p className="text-xs text-slate-400">Supported formats: CSV. Contains broadcaster-supplied transmission log reports.</p>
 
           <div 
@@ -370,29 +376,28 @@ export default function UploadPage() {
               )}
             </div>
           )}
-        </div>
+        </Card>
 
       </div>
 
       {/* Audit trigger button */}
       <div className="flex justify-end mt-4">
-        <button
+        <Button
+          variant="primary"
           onClick={handleRunAudit}
-          disabled={!contractFile || !logFile || !contractValid || !logValid || auditing || validating}
-          className="px-8 py-3.5 bg-gradient-to-r from-teal-accent to-emerald-accent hover:opacity-90 disabled:opacity-55 disabled:cursor-not-allowed text-navy-950 font-bold rounded-xl flex items-center gap-2 shadow-lg shadow-teal-500/10 active:scale-[0.99] transition-all"
+          disabled={!contractFile || !logFile || !contractValid || !logValid || validating}
+          loading={auditing}
+          className="px-8 py-3.5"
         >
           {auditing ? (
-            <>
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-navy-950 border-t-transparent"></span>
-              Running Reconciliation Engine...
-            </>
+            'Running Reconciliation Engine...'
           ) : (
             <>
               Proceed to Review
               <ArrowRight className="h-4.5 w-4.5" />
             </>
           )}
-        </button>
+        </Button>
       </div>
     </div>
   );

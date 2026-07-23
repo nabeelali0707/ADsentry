@@ -4,7 +4,13 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import { api, formatPKR } from '@/lib/api';
-import { 
+import Button from '@/components/ui/Button';
+import { Card, CardTitle } from '@/components/ui/Card';
+import { StatCard } from '@/components/ui/StatCard';
+import { Skeleton, StatCardSkeleton } from '@/components/ui/Skeleton';
+import Badge from '@/components/ui/Badge';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import {
   LineChart, 
   Line, 
   XAxis, 
@@ -61,31 +67,34 @@ export default function DashboardPage() {
       <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
         <AlertTriangle className="h-10 w-10 text-yellow-500" />
         <p className="font-medium text-sm">No contract is currently loaded. Please upload a contract first.</p>
-        <button 
-          onClick={() => router.push('/upload')} 
-          className="mt-2 px-4 py-2 bg-teal-accent text-navy-950 rounded-xl font-semibold text-xs"
-        >
+        <Button onClick={() => router.push('/upload')} className="mt-2 px-4 py-2 text-xs">
           Go to Upload
-        </button>
+        </Button>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-teal-accent gap-3">
-        <RefreshCw className="h-8 w-8 animate-spin" />
-        <span className="text-sm font-medium tracking-wide">Aggregating Compliance Metrics...</span>
+      <div className="space-y-8 max-w-6xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <Skeleton className="h-64 rounded-2xl" />
+          <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <StatCardSkeleton key={i} />
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <Skeleton className="h-96 rounded-2xl" />
+          <Skeleton className="h-96 rounded-2xl" />
+        </div>
       </div>
     );
   }
 
   if (error || !dashboardData) {
-    return (
-      <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-center">
-        {error || 'Failed to display dashboard.'}
-      </div>
-    );
+    return <ErrorBanner>{error || 'Failed to display dashboard.'}</ErrorBanner>;
   }
 
   const { compliance_ring, kpi_cards, weekly_trend, channel_breakdown } = dashboardData;
@@ -136,24 +145,23 @@ export default function DashboardPage() {
             Campaign: <span className="text-white font-semibold">{activeContract.campaign_name}</span> ({activeContract.brand_name})
           </p>
         </div>
-        <button 
+        <Button
+          variant="ghost"
           onClick={fetchDashboardData}
-          className="p-2.5 rounded-xl border border-slate-800 hover:border-teal-accent/30 hover:bg-slate-900 text-slate-400 hover:text-white transition-all duration-200"
+          className="p-2.5 rounded-xl border border-slate-800"
         >
           <RefreshCw className="h-4.5 w-4.5" />
-        </button>
+        </Button>
       </div>
 
       {/* Headline Compliance Ring & Status Banner */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        
+
         {/* Compliance Gauge */}
-        <div className={`glass-panel p-6 rounded-2xl border border-slate-800 flex flex-col items-center justify-center text-center relative overflow-hidden ${statusStyle.bgGlow}`}>
+        <Card className={`p-6 flex flex-col items-center justify-center text-center relative overflow-hidden ${statusStyle.bgGlow}`}>
           {/* Subtle status colored glow dot */}
           <div className="absolute top-4 right-4 flex items-center gap-1.5">
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${statusStyle.color}`}>
-              {statusStyle.label}
-            </span>
+            <Badge status={compliance_ring.status} label={statusStyle.label} />
           </div>
 
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Compliance Score</p>
@@ -191,70 +199,43 @@ export default function DashboardPage() {
               ? 'Campaign meets the contracted compliance threshold guidelines.' 
               : 'Compliance falls below tolerance. Recoup claims are recommended.'}
           </p>
-        </div>
+        </Card>
 
         {/* KPI Cards Area */}
         <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
-          
-          <div className="glass-card p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Delivered Airings</p>
-                <h3 className="text-3xl font-black text-white mt-1.5">{kpi_cards.total_delivered}</h3>
-              </div>
-              <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-400 border border-emerald-500/20">
-                <CheckCircle className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="text-xs text-slate-400 mt-4 border-t border-slate-850 pt-3">
-              Out of <span className="text-white font-semibold">{activeContract.contracted_airings}</span> spots scheduled in media contract.
-            </div>
-          </div>
 
-          <div className="glass-card p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Missed Airings</p>
-                <h3 className="text-3xl font-black text-red-400 mt-1.5">{kpi_cards.total_missed}</h3>
-              </div>
-              <div className="p-2.5 bg-red-500/10 rounded-xl text-red-400 border border-red-500/20">
-                <AlertTriangle className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="text-xs text-slate-400 mt-4 border-t border-slate-850 pt-3">
-              Spots that completely failed to broadcast on log records.
-            </div>
-          </div>
+          <StatCard
+            label="Delivered Airings"
+            value={kpi_cards.total_delivered}
+            icon={CheckCircle}
+            tone="success"
+            description={<>Out of <span className="text-white font-semibold">{activeContract.contracted_airings}</span> spots scheduled in media contract.</>}
+          />
 
-          <div className="glass-card p-6 rounded-2xl border border-slate-800 flex flex-col justify-between">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Shortened Spots</p>
-                <h3 className="text-3xl font-black text-teal-400 mt-1.5">{kpi_cards.total_shortened}</h3>
-              </div>
-              <div className="p-2.5 bg-teal-500/10 rounded-xl text-teal-400 border border-teal-500/20">
-                <RefreshCw className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="text-xs text-slate-400 mt-4 border-t border-slate-850 pt-3">
-              Spots that aired below contracted duration.
-            </div>
-          </div>
+          <StatCard
+            label="Missed Airings"
+            value={kpi_cards.total_missed}
+            icon={AlertTriangle}
+            tone="danger"
+            description="Spots that completely failed to broadcast on log records."
+          />
 
-          <div className="glass-card p-6 rounded-2xl border border-slate-800 flex flex-col justify-between bg-gradient-to-br from-teal-500/5 to-transparent">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Estimated Overpayment</p>
-                <h3 className="text-3xl font-black text-teal-accent mt-1.5">{formatPKR(kpi_cards.estimated_overpayment)}</h3>
-              </div>
-              <div className="p-2.5 bg-teal-accent/15 rounded-xl text-teal-accent border border-teal-500/20">
-                <Coins className="h-5 w-5" />
-              </div>
-            </div>
-            <div className="text-xs text-teal-400/80 mt-4 border-t border-slate-850 pt-3 font-medium">
-              Recoverable exposure computed from media cost audits.
-            </div>
-          </div>
+          <StatCard
+            label="Shortened Spots"
+            value={kpi_cards.total_shortened}
+            icon={RefreshCw}
+            tone="accent"
+            description="Spots that aired below contracted duration."
+          />
+
+          <StatCard
+            label="Estimated Overpayment"
+            value={formatPKR(kpi_cards.estimated_overpayment)}
+            icon={Coins}
+            tone="accent"
+            description="Recoverable exposure computed from media cost audits."
+            className="bg-gradient-to-br from-teal-500/5 to-transparent"
+          />
 
         </div>
       </div>
@@ -263,11 +244,11 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Weekly Trend Line Chart */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-md font-bold text-white flex items-center gap-2">
+        <Card className="p-6 space-y-4">
+          <CardTitle className="text-md">
             <TrendingUp className="h-4.5 w-4.5 text-teal-accent" />
             Compliance Weekly Trend
-          </h3>
+          </CardTitle>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={weekly_trend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -291,14 +272,14 @@ export default function DashboardPage() {
               </LineChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
 
         {/* Channel Breakdown Bar Chart */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-md font-bold text-white flex items-center gap-2">
+        <Card className="p-6 space-y-4">
+          <CardTitle className="text-md">
             <Tv className="h-4.5 w-4.5 text-teal-accent" />
             Compliance Rate By Channel
-          </h3>
+          </CardTitle>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={channel_breakdown} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -318,7 +299,7 @@ export default function DashboardPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
 
       </div>
     </div>

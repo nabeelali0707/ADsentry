@@ -5,13 +5,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuditStore } from '@/store/useAuditStore';
 import { signInWithEmail, fetchMyProfile, mapAuthErrorMessage } from '@/lib/auth';
+import Button from '@/components/ui/Button';
+import ErrorBanner from '@/components/ui/ErrorBanner';
 import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
   const { login, isAuthenticated } = useAuditStore();
-  const [email, setEmail] = useState('manager@nationalfoods.com.pk');
-  const [password, setPassword] = useState('********');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -70,11 +72,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl p-3 text-center">
-            {error}
-          </div>
-        )}
+        <ErrorBanner>{error}</ErrorBanner>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="space-y-4 rounded-md">
@@ -130,23 +128,16 @@ export default function LoginPage() {
             </a>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-teal-accent to-emerald-accent text-navy-950 font-semibold text-sm rounded-xl hover:opacity-90 active:scale-[0.99] transition-all disabled:opacity-50 disabled:pointer-events-none"
-          >
+          <Button type="submit" variant="primary" loading={loading} className="w-full py-3">
             {loading ? (
-              <span className="flex items-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-navy-950 border-t-transparent"></span>
-                Verifying Credentials...
-              </span>
+              'Verifying Credentials...'
             ) : (
               <>
                 Sign In
                 <ArrowRight className="h-4 w-4" />
               </>
             )}
-          </button>
+          </Button>
         </form>
 
         <div className="text-center mt-6">

@@ -4,7 +4,11 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import { api, formatPKR } from '@/lib/api';
-import { 
+import Button from '@/components/ui/Button';
+import { Card, CardTitle } from '@/components/ui/Card';
+import { Skeleton } from '@/components/ui/Skeleton';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import {
   BarChart, 
   Bar, 
   XAxis, 
@@ -61,31 +65,30 @@ export default function FinancialImpactPage() {
       <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
         <AlertTriangle className="h-10 w-10 text-yellow-500" />
         <p className="font-medium text-sm">No contract is currently loaded. Please upload a contract first.</p>
-        <button 
-          onClick={() => router.push('/upload')} 
-          className="mt-2 px-4 py-2 bg-teal-accent text-navy-950 rounded-xl font-semibold text-xs"
-        >
+        <Button onClick={() => router.push('/upload')} className="mt-2 px-4 py-2 text-xs">
           Go to Upload
-        </button>
+        </Button>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-teal-accent gap-3">
-        <RefreshCw className="h-8 w-8 animate-spin" />
-        <span className="text-sm font-medium tracking-wide">Calculating Financial Overpayments...</span>
+      <div className="space-y-8 max-w-6xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <Skeleton className="h-56 rounded-2xl" />
+          <Skeleton className="h-56 rounded-2xl md:col-span-2" />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <Skeleton className="h-80 rounded-2xl" />
+          <Skeleton className="h-80 rounded-2xl" />
+        </div>
       </div>
     );
   }
 
   if (error || !financialData) {
-    return (
-      <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-center">
-        {error}
-      </div>
-    );
+    return <ErrorBanner>{error}</ErrorBanner>;
   }
 
   const { total_overpayment, loss_by_type, loss_by_channel } = financialData;
@@ -116,26 +119,23 @@ export default function FinancialImpactPage() {
           <h1 className="text-3xl font-extrabold text-white tracking-tight">Financial Impact Analysis</h1>
           <p className="text-slate-400 mt-1">Audit the financial losses and overpayments from broadcaster discrepancies.</p>
         </div>
-        <button 
-          onClick={fetchFinancialData}
-          className="p-2.5 rounded-xl border border-slate-800 hover:border-teal-accent/30 hover:bg-slate-900 text-slate-400 hover:text-white transition-all duration-200"
-        >
+        <Button variant="ghost" onClick={fetchFinancialData} className="p-2.5 rounded-xl border border-slate-800">
           <RefreshCw className="h-4.5 w-4.5" />
-        </button>
+        </Button>
       </div>
 
       {/* Main Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        
+
         {/* Total Overpayment Summary Card */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 flex flex-col justify-between bg-gradient-to-br from-teal-500/5 to-transparent relative overflow-hidden">
+        <Card className="p-6 flex flex-col justify-between bg-gradient-to-br from-teal-500/5 to-transparent relative overflow-hidden">
           <div className="absolute -top-12 -left-12 w-24 h-24 bg-teal-accent/5 rounded-full blur-2xl"></div>
           <div>
             <p className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Total Overpayment Exposure</p>
             <h3 className="text-4.5xl font-black text-teal-accent mt-3 select-all leading-none">{formatPKR(total_overpayment)}</h3>
             <p className="text-xs text-slate-400 mt-2">Recoverable media value from audits.</p>
           </div>
-          <div className="mt-8 border-t border-slate-850 pt-4 space-y-2.5 text-xs text-slate-450">
+          <div className="mt-8 border-t border-slate-800/60 pt-4 space-y-2.5 text-xs text-slate-400">
             <div className="flex justify-between">
               <span>Total Contract Value:</span>
               <span className="text-slate-200 font-semibold">{formatPKR(contractValue)}</span>
@@ -145,15 +145,15 @@ export default function FinancialImpactPage() {
               <span className="text-teal-400 font-bold">{exposurePct}%</span>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Audit Rationale Cards */}
-        <div className="md:col-span-2 glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-md font-bold text-white flex items-center gap-2 pb-3 border-b border-slate-800">
+        <Card className="md:col-span-2 p-6 space-y-4">
+          <CardTitle className="text-md pb-3 border-b border-slate-800">
             <Calculator className="h-4.5 w-4.5 text-teal-accent" />
             Financial Audit Calculation Formula
-          </h3>
-          
+          </CardTitle>
+
           <div className="space-y-4 text-xs leading-relaxed text-slate-400">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="p-3 bg-slate-900 border border-slate-850 rounded-xl">
@@ -171,7 +171,7 @@ export default function FinancialImpactPage() {
               <span>These calculations are backed by local advertising guidelines and legal dispute precedents.</span>
             </div>
           </div>
-        </div>
+        </Card>
 
       </div>
 
@@ -179,12 +179,12 @@ export default function FinancialImpactPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Loss by Type Donut/Pie Chart */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
-          <h3 className="text-md font-bold text-white flex items-center gap-2">
+        <Card className="p-6 space-y-6">
+          <CardTitle className="text-md">
             <TrendingDown className="h-4.5 w-4.5 text-teal-accent" />
             Exposure By Discrepancy Type
-          </h3>
-          
+          </CardTitle>
+
           <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
             <div className="h-56 w-56">
               <ResponsiveContainer width="100%" height="100%">
@@ -230,14 +230,14 @@ export default function FinancialImpactPage() {
               })}
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Loss by Channel Bar Chart */}
-        <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4">
-          <h3 className="text-md font-bold text-white flex items-center gap-2">
+        <Card className="p-6 space-y-4">
+          <CardTitle className="text-md">
             <Tv className="h-4.5 w-4.5 text-teal-accent" />
             Exposure By Broadcast Channel
-          </h3>
+          </CardTitle>
           <div className="h-56 w-full flex items-center">
             <ResponsiveContainer width="100%" height="90%">
               <BarChart data={loss_by_channel} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
@@ -257,7 +257,7 @@ export default function FinancialImpactPage() {
               </BarChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </Card>
 
       </div>
     </div>

@@ -4,16 +4,20 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import { api, formatPKR, Discrepancy } from '@/lib/api';
-import { 
-  AlertTriangle, 
-  Download, 
-  FileText, 
-  CheckCircle2, 
-  Printer, 
-  Eye, 
+import Button from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import { Skeleton } from '@/components/ui/Skeleton';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import {
+  AlertTriangle,
+  Download,
+  FileText,
+  CheckCircle2,
+  Printer,
+  Eye,
   FileSpreadsheet,
   Clock,
-  RefreshCw,
   Building,
   Tv
 } from 'lucide-react';
@@ -150,36 +154,21 @@ export default function ExportPage() {
       <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
         <AlertTriangle className="h-10 w-10 text-yellow-500" />
         <p className="font-medium text-sm">No contract is currently loaded. Please upload a contract first.</p>
-        <button 
-          onClick={() => router.push('/upload')} 
-          className="mt-2 px-4 py-2 bg-teal-accent text-navy-950 rounded-xl font-semibold text-xs"
-        >
+        <Button onClick={() => router.push('/upload')} className="mt-2 px-4 py-2 text-xs">
           Go to Upload
-        </button>
+        </Button>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-teal-accent gap-3">
-        <RefreshCw className="h-8 w-8 animate-spin" />
-        <span className="text-sm font-medium tracking-wide">Compiling Print-ready Audit Formats...</span>
+      <div className="space-y-6 max-w-5xl mx-auto">
+        <Skeleton className="h-14 rounded-2xl" />
+        <Skeleton className="h-[600px] rounded-2xl" />
       </div>
     );
   }
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'EXPORTED':
-        return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-      case 'FINAL':
-        return 'text-teal-400 bg-teal-500/10 border-teal-500/20';
-      case 'DRAFT':
-      default:
-        return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
-    }
-  };
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
@@ -196,44 +185,38 @@ export default function ExportPage() {
         <div className="flex gap-3 flex-wrap">
           {/* 4.7 PRD: Mark as Final button — DRAFT → FINAL status transition */}
           {reportStatus === 'DRAFT' && (
-            <button
+            <Button
+              variant="secondary"
               onClick={handleMarkFinal}
-              disabled={markingFinal || exportingPdf || exportingXlsx}
-              className="px-5 py-2.5 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-400 font-semibold text-xs rounded-xl flex items-center gap-2 transition-all disabled:opacity-50"
+              disabled={exportingPdf || exportingXlsx}
+              loading={markingFinal}
+              className="text-xs"
             >
-              {markingFinal ? (
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-amber-400 border-t-transparent"></span>
-              ) : (
-                <CheckCircle2 className="h-4.5 w-4.5" />
-              )}
+              {!markingFinal && <CheckCircle2 className="h-4.5 w-4.5" />}
               Mark as Final
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            variant="secondary"
             onClick={handleExportXlsx}
-            disabled={exportingPdf || exportingXlsx || markingFinal}
-            className="px-5 py-2.5 bg-slate-900 border border-slate-850 hover:bg-slate-800 text-slate-350 hover:text-white font-semibold text-xs rounded-xl flex items-center gap-2 transition-all disabled:opacity-50"
+            disabled={exportingPdf || markingFinal}
+            loading={exportingXlsx}
+            className="text-xs"
           >
-            {exportingXlsx ? (
-              <span className="h-4.5 w-4.5 animate-spin rounded-full border-2 border-slate-500 border-t-transparent"></span>
-            ) : (
-              <FileSpreadsheet className="h-4.5 w-4.5" />
-            )}
+            {!exportingXlsx && <FileSpreadsheet className="h-4.5 w-4.5" />}
             Export Excel
-          </button>
-          
-          <button
+          </Button>
+
+          <Button
+            variant="primary"
             onClick={handleExportPdf}
-            disabled={exportingPdf || exportingXlsx || markingFinal}
-            className="px-6 py-2.5 bg-gradient-to-r from-teal-accent to-emerald-accent text-navy-950 font-bold text-xs rounded-xl flex items-center gap-2 shadow-lg shadow-teal-500/10 active:scale-[0.99] transition-all disabled:opacity-50"
+            disabled={exportingXlsx || markingFinal}
+            loading={exportingPdf}
+            className="text-xs px-6"
           >
-            {exportingPdf ? (
-              <span className="h-4.5 w-4.5 animate-spin rounded-full border-2 border-navy-950 border-t-transparent"></span>
-            ) : (
-              <Download className="h-4.5 w-4.5" />
-            )}
+            {!exportingPdf && <Download className="h-4.5 w-4.5" />}
             Download PDF Report
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -244,27 +227,21 @@ export default function ExportPage() {
         </div>
       )}
 
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-center">
-          {error}
-        </div>
-      )}
+      <ErrorBanner>{error}</ErrorBanner>
 
       {/* Main Preview Container */}
       <div className="space-y-6">
         {/* Status indicator bar */}
-        <div className="glass-panel p-4 rounded-2xl border border-slate-800 flex justify-between items-center text-xs">
+        <Card className="p-4 flex justify-between items-center text-xs">
           <div className="flex items-center gap-2">
             <span className="text-slate-400">Audit State Status:</span>
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getStatusBadge(reportStatus)}`}>
-              {reportStatus}
-            </span>
+            <Badge status={reportStatus} />
           </div>
           <div className="flex items-center gap-1.5 text-slate-500">
             <Clock className="h-4 w-4" />
             <span>Generated: {new Date(activeReport.generated_date).toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}</span>
           </div>
-        </div>
+        </Card>
 
         {/* Print-ready Report Sheet */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden text-slate-300">

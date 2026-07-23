@@ -4,7 +4,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import { api } from '@/lib/api';
-import { 
+import Button from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Skeleton } from '@/components/ui/Skeleton';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import {
   AlertTriangle, 
   Sparkles, 
   Send, 
@@ -134,21 +138,18 @@ export default function AiSummaryPage() {
       <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
         <AlertTriangle className="h-10 w-10 text-yellow-500" />
         <p className="font-medium text-sm">No contract is currently loaded. Please upload a contract first.</p>
-        <button 
-          onClick={() => router.push('/upload')} 
-          className="mt-2 px-4 py-2 bg-teal-accent text-navy-950 rounded-xl font-semibold text-xs"
-        >
+        <Button onClick={() => router.push('/upload')} className="mt-2 px-4 py-2 text-xs">
           Go to Upload
-        </button>
+        </Button>
       </div>
     );
   }
 
   if (loading && !summary) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-teal-accent gap-3">
-        <RefreshCw className="h-8 w-8 animate-spin" />
-        <span className="text-sm font-medium tracking-wide">Synthesizing Natural Language Narratives...</span>
+      <div className="space-y-8 max-w-5xl mx-auto">
+        <Skeleton className="h-40 rounded-2xl" />
+        <Skeleton className="h-[480px] rounded-2xl" />
       </div>
     );
   }
@@ -164,14 +165,10 @@ export default function AiSummaryPage() {
         <p className="text-slate-400 mt-1">Generate natural language dispute reports and ask custom compliance questions.</p>
       </div>
 
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-center">
-          {error}
-        </div>
-      )}
+      <ErrorBanner>{error}</ErrorBanner>
 
       {/* Headline AI Summary Card */}
-      <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-4 bg-gradient-to-br from-teal-500/5 to-transparent relative overflow-hidden">
+      <Card className="p-6 space-y-4 bg-gradient-to-br from-teal-500/5 to-transparent relative overflow-hidden">
         <div className="flex justify-between items-start">
           <h3 className="text-md font-bold text-white flex items-center gap-2">
             <Bot className="h-5 w-5 text-teal-accent" />
@@ -191,13 +188,14 @@ export default function AiSummaryPage() {
                 {generationTimeMs < 1000 ? `${generationTimeMs}ms` : `${(generationTimeMs / 1000).toFixed(1)}s`}
               </span>
             )}
-            <button
+            <Button
+              variant="ghost"
               onClick={() => handleCopyText(summary)}
-              className="p-1.5 rounded-lg border border-slate-850 hover:bg-slate-900 text-slate-400 hover:text-white transition-colors"
+              className="p-1.5 rounded-lg border border-slate-800"
               title="Copy Summary"
             >
               {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -210,17 +208,18 @@ export default function AiSummaryPage() {
         </p>
 
         {!streaming && (
-          <button
+          <Button
+            variant="ghost"
             onClick={fetchSummary}
-            className="text-xs text-slate-500 hover:text-teal-accent flex items-center gap-1.5 transition-colors"
+            className="px-0 py-0 gap-1.5 text-xs text-slate-500 hover:bg-transparent hover:text-teal-accent"
           >
             <RefreshCw className="h-3 w-3" /> Regenerate
-          </button>
+          </Button>
         )}
-      </div>
+      </Card>
 
       {/* Interactive Q&A chat panel */}
-      <div className="glass-panel rounded-2xl border border-slate-800 flex flex-col h-[480px] overflow-hidden">
+      <Card className="flex flex-col h-[480px] overflow-hidden">
         {/* Chat Title */}
         <div className="p-4 border-b border-slate-850 bg-slate-900/40 flex items-center gap-2">
           <HelpCircle className="h-4.5 w-4.5 text-teal-accent" />
@@ -276,14 +275,15 @@ export default function AiSummaryPage() {
         {/* Suggested Queries */}
         <div className="px-4 py-3 bg-slate-900/35 border-t border-slate-850 flex flex-wrap gap-2">
           {SUGGESTED_QUESTIONS.map((q) => (
-            <button
+            <Button
               key={q}
+              variant="ghost"
               onClick={() => handleAsk(q)}
               disabled={asking || streaming}
-              className="px-3 py-1.5 rounded-lg border border-slate-800 hover:border-teal-500/30 bg-slate-900 hover:bg-slate-800/80 text-[11px] text-slate-350 hover:text-white transition-all disabled:opacity-50"
+              className="px-3 py-1.5 rounded-lg border border-slate-800 hover:border-teal-500/30 bg-slate-900 hover:bg-slate-800/80 text-[11px]"
             >
               {q}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -300,15 +300,17 @@ export default function AiSummaryPage() {
             placeholder="Ask AI about this audit... (e.g. 'draft a dispute email')"
             className="flex-1 px-4 py-3 bg-slate-950 border border-slate-850 focus:border-teal-accent/50 focus:ring-1 focus:ring-teal-accent/50 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none transition-all disabled:opacity-50"
           />
-          <button
+          <Button
+            variant="primary"
             onClick={() => handleAsk(question)}
-            disabled={asking || !question.trim() || streaming}
-            className="px-5 bg-gradient-to-r from-teal-accent to-emerald-accent text-navy-950 font-bold rounded-xl flex items-center justify-center transition-all hover:opacity-90 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none"
+            disabled={!question.trim() || streaming}
+            loading={asking}
+            className="px-5"
           >
-            <Send className="h-4 w-4" />
-          </button>
+            {!asking && <Send className="h-4 w-4" />}
+          </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

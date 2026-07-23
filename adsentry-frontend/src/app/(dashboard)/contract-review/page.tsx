@@ -4,7 +4,10 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import { api, formatPKR, Contract, AuditCorrection } from '@/lib/api';
-import { 
+import Button from '@/components/ui/Button';
+import { Card, CardTitle } from '@/components/ui/Card';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import {
   FileText, 
   HelpCircle, 
   Save, 
@@ -88,9 +91,9 @@ export default function ContractReviewPage() {
       <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
         <AlertTriangle className="h-10 w-10 text-yellow-500" />
         <p className="font-medium text-sm">No contract is currently loaded. Please upload a contract first.</p>
-        <button onClick={() => router.push('/upload')} className="mt-2 px-4 py-2 bg-teal-accent text-navy-950 rounded-xl font-semibold text-xs">
+        <Button onClick={() => router.push('/upload')} className="mt-2 px-4 py-2 text-xs">
           Go to Upload
-        </button>
+        </Button>
       </div>
     );
   }
@@ -166,28 +169,22 @@ export default function ContractReviewPage() {
           <p className="text-slate-400 mt-1">Confirm extracted variables or adjust audit parameters to form your baseline.</p>
         </div>
         <div className="flex gap-3">
-          <button
+          <Button
+            variant="secondary"
             onClick={handleSaveChanges}
-            disabled={saving || runningAudit}
-            className="px-5 py-2.5 bg-slate-900 border border-slate-850 hover:bg-slate-800 text-slate-350 hover:text-white font-semibold text-sm rounded-xl flex items-center gap-2 transition-all disabled:opacity-50"
+            disabled={runningAudit}
+            loading={saving}
           >
-            {saving ? (
-              <><span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-500 border-t-transparent"></span>Saving...</>
-            ) : (
-              <><Save className="h-4 w-4" />Save Edits</>
-            )}
-          </button>
-          <button
+            {saving ? 'Saving...' : (<><Save className="h-4 w-4" />Save Edits</>)}
+          </Button>
+          <Button
+            variant="primary"
             onClick={handleConfirmAndRunAudit}
-            disabled={saving || runningAudit}
-            className="px-6 py-2.5 bg-gradient-to-r from-teal-accent to-emerald-accent text-navy-950 font-bold text-sm rounded-xl flex items-center gap-2 shadow-lg shadow-teal-500/10 active:scale-[0.99] transition-all disabled:opacity-50"
+            disabled={saving}
+            loading={runningAudit}
           >
-            {runningAudit ? (
-              <><span className="h-4 w-4 animate-spin rounded-full border-2 border-navy-950 border-t-transparent"></span>Auditing...</>
-            ) : (
-              <><Play className="h-4 w-4 fill-current" />Confirm &amp; Reconcile</>
-            )}
-          </button>
+            {runningAudit ? 'Auditing...' : (<><Play className="h-4 w-4 fill-current" />Confirm &amp; Reconcile</>)}
+          </Button>
         </div>
       </div>
 
@@ -197,23 +194,18 @@ export default function ContractReviewPage() {
           <p className="text-sm font-medium">{successMsg}</p>
         </div>
       )}
-      {errorMsg && (
-        <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 text-red-400 rounded-2xl">
-          <AlertTriangle className="h-5 w-5 shrink-0" />
-          <p className="text-sm font-medium">{errorMsg}</p>
-        </div>
-      )}
+      <ErrorBanner>{errorMsg}</ErrorBanner>
 
       {/* Main Review Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         {/* Configuration Forms */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+          <Card className="p-6 space-y-6">
+            <CardTitle className="border-b border-slate-800 pb-3">
               <FileText className="h-5 w-5 text-teal-accent" />
               Contract Airing Parameters
-            </h3>
+            </CardTitle>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -259,14 +251,14 @@ export default function ContractReviewPage() {
                 </div>
               </div>
             </div>
-          </div>
+          </Card>
 
           {/* Reconciliation parameters */}
-          <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+          <Card className="p-6 space-y-6">
+            <CardTitle className="border-b border-slate-800 pb-3">
               <Clock className="h-5 w-5 text-teal-accent" />
               Audit Tolerance Settings
-            </h3>
+            </CardTitle>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               
               <div>
@@ -318,10 +310,10 @@ export default function ContractReviewPage() {
               </div>
 
             </div>
-          </div>
+          </Card>
 
           {/* Audit Trail Panel (Security 5.1) */}
-          <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
+          <Card className="overflow-hidden">
             <button
               onClick={handleToggleAuditTrail}
               className="w-full flex items-center justify-between p-5 hover:bg-slate-800/30 transition-colors"
@@ -374,13 +366,13 @@ export default function ContractReviewPage() {
                 )}
               </div>
             )}
-          </div>
+          </Card>
         </div>
 
         {/* Campaign Summary Card */}
         <div className="space-y-6">
-          <div className="glass-panel p-6 rounded-2xl border border-slate-800 space-y-6 sticky top-6">
-            <h3 className="text-lg font-bold text-white border-b border-slate-800 pb-3">Campaign Summary</h3>
+          <Card className="p-6 space-y-6 sticky top-6">
+            <CardTitle className="border-b border-slate-800 pb-3">Campaign Summary</CardTitle>
             <div className="space-y-4">
               <div>
                 <p className="text-xs text-slate-400 uppercase tracking-wider">Brand Name</p>
@@ -413,7 +405,7 @@ export default function ContractReviewPage() {
               <CheckCircle2 className="h-4.5 w-4.5 text-teal-accent shrink-0 mt-0.5" />
               <p>Reconciliation will lock these parameters. Edits after locking are recorded in the audit log.</p>
             </div>
-          </div>
+          </Card>
         </div>
 
       </div>

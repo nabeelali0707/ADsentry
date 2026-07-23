@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
-import { 
+import Button from '@/components/ui/Button';
+import {
   UploadCloud, 
   FileText, 
   LayoutDashboard, 
@@ -132,16 +133,17 @@ export default function Sidebar() {
             </div>
           )}
 
-          <button
+          <Button
+            variant="danger"
             onClick={() => {
               logout();
               router.push('/login');
             }}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-850 hover:border-red-500/30 hover:bg-red-500/10 text-slate-400 hover:text-red-400 text-sm font-medium transition-all duration-200"
+            className="w-full"
           >
             <LogOut className="h-4 w-4" />
             Logout
-          </button>
+          </Button>
         </div>
       </aside>
 

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import Sidebar from '@/components/sidebar';
+import PageTransition from '@/components/PageTransition';
 
 export default function DashboardLayout({
   children,
@@ -41,8 +42,8 @@ export default function DashboardLayout({
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto bg-gradient-to-br from-navy-950 via-slate-950 to-navy-900 px-4 md:px-8 py-6 md:py-8">
-        <div className="max-w-7xl w-full mx-auto animate-fade-in">
-          {children}
+        <div className="max-w-7xl w-full mx-auto">
+          <PageTransition>{children}</PageTransition>
         </div>
       </main>
     </div>

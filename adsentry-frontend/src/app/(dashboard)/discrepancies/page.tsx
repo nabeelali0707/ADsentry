@@ -4,18 +4,22 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import { api, formatPKR, Discrepancy, DiscrepancyType } from '@/lib/api';
-import { 
-  AlertTriangle, 
-  Search, 
-  Filter, 
-  ChevronRight, 
-  X, 
-  Tv, 
-  Clock, 
-  Calendar, 
-  Coins, 
+import Button from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import { Skeleton, TableRowSkeleton } from '@/components/ui/Skeleton';
+import ErrorBanner from '@/components/ui/ErrorBanner';
+import {
+  AlertTriangle,
+  Search,
+  Filter,
+  ChevronRight,
+  X,
+  Tv,
+  Clock,
+  Calendar,
+  Coins,
   Info,
-  RefreshCw,
   FileText
 } from 'lucide-react';
 
@@ -94,12 +98,9 @@ export default function DiscrepanciesPage() {
       <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
         <AlertTriangle className="h-10 w-10 text-yellow-500" />
         <p className="font-medium text-sm">No contract is currently loaded. Please upload a contract first.</p>
-        <button 
-          onClick={() => router.push('/upload')} 
-          className="mt-2 px-4 py-2 bg-teal-accent text-navy-950 rounded-xl font-semibold text-xs"
-        >
+        <Button onClick={() => router.push('/upload')} className="mt-2 px-4 py-2 text-xs">
           Go to Upload
-        </button>
+        </Button>
       </div>
     );
   }
@@ -120,37 +121,54 @@ export default function DiscrepanciesPage() {
           <button
             key={type.value}
             onClick={() => setFilterType(type.value)}
-            className={`
-              px-4 py-2.5 rounded-xl text-xs font-semibold border transition-all duration-200
-              ${filterType === type.value
-                ? 'bg-teal-accent text-navy-950 border-teal-accent shadow-md shadow-teal-500/10'
-                : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-              }
-            `}
+            className={`rounded-xl transition-all duration-200 ${
+              filterType === type.value
+                ? 'ring-2 ring-teal-accent/60 shadow-md shadow-teal-500/10'
+                : 'opacity-70 hover:opacity-100'
+            }`}
           >
-            {type.label}
+            <Badge
+              status={type.value}
+              label={type.label}
+              className="px-4 py-2.5 text-xs font-semibold normal-case tracking-normal"
+            />
           </button>
         ))}
       </div>
 
       {/* Main Grid View */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 text-teal-accent gap-3">
-          <RefreshCw className="h-8 w-8 animate-spin" />
-          <span className="text-sm font-medium tracking-wide">Loading logs reconciliation report...</span>
-        </div>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-[10px] font-semibold text-slate-400 uppercase tracking-wider bg-slate-900/40">
+                  <th className="px-6 py-4">Airing Date</th>
+                  <th className="px-6 py-4">Discrepancy Type</th>
+                  <th className="px-6 py-4">Contract Baseline</th>
+                  <th className="px-6 py-4">Broadcaster Log</th>
+                  <th className="px-6 py-4 text-right">Exposure (PKR)</th>
+                  <th className="px-6 py-4"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <TableRowSkeleton key={i} columns={6} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       ) : error ? (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl text-center">
-          {error}
-        </div>
+        <ErrorBanner>{error}</ErrorBanner>
       ) : discrepancies.length === 0 ? (
-        <div className="glass-panel p-12 rounded-2xl border border-slate-800 text-center text-slate-400 space-y-2">
+        <Card className="p-12 text-center text-slate-400 space-y-2">
           <Info className="h-8 w-8 text-teal-accent mx-auto" />
           <p className="font-semibold text-sm">No discrepancies found in this category.</p>
           <p className="text-xs text-slate-500">Broadcaster logs conform fully for selected filters.</p>
-        </div>
+        </Card>
       ) : (
-        <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -174,9 +192,7 @@ export default function DiscrepanciesPage() {
                       {item.air_date || 'N/A'}
                     </td>
                     <td className="px-6 py-4.5">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${getBadgeStyle(item.type)}`}>
-                        {formatTypeName(item.type)}
-                      </span>
+                      <Badge status={item.type} />
                     </td>
                     <td className="px-6 py-4.5 text-xs text-slate-400 truncate max-w-[180px]">
                       {item.expected_value}
@@ -195,7 +211,7 @@ export default function DiscrepanciesPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Row Detail Slider / Drawer */}
@@ -215,20 +231,21 @@ export default function DiscrepanciesPage() {
                 <h3 className="text-lg font-bold text-white">Discrepancy Details</h3>
                 <p className="text-xs text-slate-400 mt-0.5">ID: {selectedId}</p>
               </div>
-              <button 
-                onClick={() => setSelectedId(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-900 transition-colors"
-              >
+              <Button variant="ghost" onClick={() => setSelectedId(null)} className="p-1">
                 <X className="h-5 w-5" />
-              </button>
+              </Button>
             </div>
 
             {/* Details Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {detailLoading ? (
-                <div className="flex flex-col items-center justify-center h-full text-teal-accent gap-3">
-                  <RefreshCw className="h-7 w-7 animate-spin" />
-                  <span className="text-xs font-medium">Retrieving database log rows...</span>
+                <div className="space-y-4">
+                  <Skeleton className="h-16 w-full rounded-xl" />
+                  <Skeleton className="h-20 w-full rounded-xl" />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Skeleton className="h-40 w-full rounded-xl" />
+                    <Skeleton className="h-40 w-full rounded-xl" />
+                  </div>
                 </div>
               ) : detailData ? (
                 <>
@@ -331,12 +348,9 @@ export default function DiscrepanciesPage() {
 
             {/* Footer actions */}
             <div className="p-6 border-t border-slate-850 bg-slate-900/30 flex gap-3">
-              <button 
-                onClick={() => setSelectedId(null)}
-                className="flex-1 py-2.5 border border-slate-850 hover:bg-slate-850 text-slate-400 hover:text-white rounded-xl text-xs font-semibold transition-colors"
-              >
+              <Button variant="secondary" onClick={() => setSelectedId(null)} className="flex-1 text-xs">
                 Close Details
-              </button>
+              </Button>
             </div>
           </aside>
         </>

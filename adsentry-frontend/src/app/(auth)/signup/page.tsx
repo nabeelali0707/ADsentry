@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuditStore } from '@/store/useAuditStore';
 import { signUpWithEmail, bootstrapProfile, mapAuthErrorMessage } from '@/lib/auth';
+import Button from '@/components/ui/Button';
+import ErrorBanner from '@/components/ui/ErrorBanner';
 import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock, User, Briefcase, Building } from 'lucide-react';
 
 const PENDING_PROFILE_KEY = 'adsentry_pending_profile';
@@ -91,11 +93,7 @@ export default function SignupPage() {
           </p>
         </div>
 
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl p-3 text-center animate-pulse">
-            {error}
-          </div>
-        )}
+        <ErrorBanner>{error}</ErrorBanner>
 
         <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -200,23 +198,16 @@ export default function SignupPage() {
             </label>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-teal-accent to-emerald-accent text-navy-950 font-semibold text-sm rounded-xl hover:opacity-90 active:scale-[0.99] transition-all disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" loading={loading} className="w-full py-3">
             {loading ? (
-              <span className="flex items-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-navy-950 border-t-transparent"></span>
-                Creating Profile Account...
-              </span>
+              'Creating Profile Account...'
             ) : (
               <>
                 Create Account
                 <ArrowRight className="h-4 w-4" />
               </>
             )}
-          </button>
+          </Button>
         </form>
 
         <div className="text-center mt-6">
