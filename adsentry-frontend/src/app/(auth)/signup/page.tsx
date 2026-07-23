@@ -4,7 +4,10 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuditStore } from '@/store/useAuditStore';
+import { signUpWithEmail, bootstrapProfile, mapAuthErrorMessage } from '@/lib/auth';
 import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock, User, Briefcase, Building } from 'lucide-react';
+
+const PENDING_PROFILE_KEY = 'adsentry_pending_profile';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -34,17 +37,39 @@ export default function SignupPage() {
       return;
     }
 
-    // Simulate signup request
-    setTimeout(() => {
-      login({
-        id: 'u-' + Math.random().toString(36).substr(2, 9),
-        organization_id: 'o-' + Math.random().toString(36).substr(2, 9),
-        full_name: fullName,
-        role: role,
-      });
-      router.push('/upload');
+    const { session, error: signUpError } = await signUpWithEmail(email, password);
+
+    if (signUpError) {
+      setError(mapAuthErrorMessage(signUpError));
       setLoading(false);
-    }, 1000);
+      return;
+    }
+
+    if (!session) {
+      // Email confirmation required — cache the details so the profile can be
+      // bootstrapped lazily once the user confirms and logs in for the first time.
+      try {
+        sessionStorage.setItem(
+          PENDING_PROFILE_KEY,
+          JSON.stringify({ fullName, organizationName: organization, role }),
+        );
+      } catch {
+        // sessionStorage may be unavailable (e.g. private browsing) — non-fatal
+      }
+      setError('Check your email to confirm your account, then log in.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const profile = await bootstrapProfile(fullName, organization, role);
+      login(profile);
+      router.push('/upload');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to complete account setup.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

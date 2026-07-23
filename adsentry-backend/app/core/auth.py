@@ -38,7 +38,12 @@ def _extract_user_id(auth_response: Any) -> str | None:
     return getattr(user, "id", None)
 
 
-def get_current_profile(request: Request) -> dict[str, Any]:
+def get_verified_user_id(request: Request) -> str:
+    """
+    Verify the caller's Supabase JWT and return the raw user id, without
+    requiring a profile row to already exist. Used by endpoints that
+    bootstrap a brand-new user's first profile.
+    """
     token = _extract_bearer_token(request)
     supabase = get_supabase_client()
 
@@ -57,14 +62,21 @@ def get_current_profile(request: Request) -> dict[str, Any]:
             detail="Invalid or expired token.",
         )
 
+    return user_id
+
+
+def get_current_profile(request: Request) -> dict[str, Any]:
+    user_id = get_verified_user_id(request)
+    supabase = get_supabase_client()
+
     profile_response = (
         supabase.table("profiles")
         .select("*")
         .eq("id", user_id)
-        .single()
         .execute()
     )
-    profile = profile_response.data
+    rows = profile_response.data or []
+    profile = rows[0] if rows else None
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

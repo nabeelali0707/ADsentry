@@ -7,6 +7,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.core.config import settings
 from app.routers import ai_summary
 from app.routers import audit
+from app.routers import auth
 from app.routers import contracts
 from app.routers import dashboard
 from app.routers import export
@@ -107,6 +108,7 @@ def health_check() -> dict[str, str]:
 # Routers
 # ─────────────────────────────────────────────────────────────────────────────
 
+app.include_router(auth.router)
 app.include_router(upload.router)
 app.include_router(contracts.router)
 app.include_router(audit.router)

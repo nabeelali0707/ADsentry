@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { Contract, AuditReport, api } from '@/lib/api';
+import { signOutFromSupabase } from '@/lib/auth';
 
 interface UserProfile {
   id: string;
@@ -34,46 +35,12 @@ const SESSION_MAX_AGE_HOURS = 4;
 export const useAuditStore = create<AuditState>()(
   persist(
     (set, get) => ({
-      isAuthenticated: true, // Default true for hackathon preview convenience
-      userProfile: {
-        id: 'u1111111-1111-1111-1111-111111111111',
-        organization_id: 'o1111111-1111-1111-1111-111111111111',
-        full_name: 'Ayesha Khan',
-        role: 'BRAND',
-      },
-      sessionStartedAt: new Date().toISOString(),
-      activeContractId: 'c1111111-1111-1111-1111-111111111111',
-      activeContract: {
-        id: 'c1111111-1111-1111-1111-111111111111',
-        organization_id: 'o1111111-1111-1111-1111-111111111111',
-        brand_name: 'National Foods',
-        campaign_name: 'National Ketchup Fiesta 2026',
-        channel: 'ARY Digital',
-        start_date: '2026-07-01',
-        end_date: '2026-07-31',
-        contracted_airings: 120,
-        spot_duration_sec: 30,
-        cost_per_airing: 85000,
-        total_contract_value: 10200000,
-        status: 'DRAFT',
-        time_window_tolerance_minutes: 15,
-        compliance_threshold_pct: 97.00,
-        duration_tolerance_pct: 0.90,
-        created_at: new Date('2026-07-01T12:00:00Z').toISOString(),
-        updated_at: new Date('2026-07-01T12:00:00Z').toISOString(),
-      },
-      activeReport: {
-        id: 'rep-1',
-        contract_id: 'c1111111-1111-1111-1111-111111111111',
-        generated_date: new Date().toISOString(),
-        total_overpayment: 892500,
-        compliance_rate: 90.00,
-        compliance_status: 'MAJOR_BREACH',
-        total_delivered: 104,
-        ai_summary_text: 'AdSentry AI Reconciled 120 expected airings against 116 actual broadcast logs for ARY Digital. A total of 12 critical discrepancies were flagged: 4 Missed spots, 3 Shortened spots, 3 Out-of-slot airings, and 2 Duplicate billings. This results in an estimated total overpayment of Rs. 892,500.',
-        status: 'DRAFT',
-        created_at: new Date().toISOString(),
-      },
+      isAuthenticated: false,
+      userProfile: null,
+      sessionStartedAt: null,
+      activeContractId: null,
+      activeContract: null,
+      activeReport: null,
 
       login: (profile) => set({
         isAuthenticated: true,
@@ -94,6 +61,9 @@ export const useAuditStore = create<AuditState>()(
             // Silently ignore cleanup failures — session is cleared regardless
           });
         }
+        signOutFromSupabase().catch(() => {
+          // Silently ignore — local state is cleared regardless
+        });
         set({
           isAuthenticated: false,
           userProfile: null,

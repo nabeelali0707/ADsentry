@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuditStore } from '@/store/useAuditStore';
+import { signInWithEmail, fetchMyProfile, mapAuthErrorMessage } from '@/lib/auth';
 import { Sparkles, ArrowRight, ShieldCheck, Mail, Lock } from 'lucide-react';
 
 export default function LoginPage() {
@@ -25,17 +26,29 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
 
-    // Simulate short network delay
-    setTimeout(() => {
-      login({
-        id: 'u1111111-1111-1111-1111-111111111111',
-        organization_id: 'o1111111-1111-1111-1111-111111111111',
-        full_name: 'Ayesha Khan',
-        role: 'BRAND',
-      });
-      router.push('/upload');
+    const { session, error: signInError } = await signInWithEmail(email, password);
+
+    if (signInError || !session) {
+      setError(mapAuthErrorMessage(signInError));
       setLoading(false);
-    }, 800);
+      return;
+    }
+
+    try {
+      const profile = await fetchMyProfile();
+      if (!profile) {
+        // No profile yet — most likely a signup that required email confirmation
+        // and never finished bootstrapping. Send them to complete it now.
+        router.push('/signup/complete-profile');
+        return;
+      }
+      login(profile);
+      router.push('/upload');
+    } catch {
+      setError('Something went wrong while loading your profile. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
