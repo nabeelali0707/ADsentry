@@ -41,7 +41,7 @@ def export_contract_pdf(
     get_contract_for_profile(contract_id, current_profile)
     pdf_bytes = export_pdf(str(contract_id))
     path = _report_path(contract_id, "pdf")
-    storage_path = upload_file("reports", path, pdf_bytes)
+    storage_path = upload_file("reports", path, pdf_bytes, content_type="application/pdf")
     _save_export_path(str(contract_id), "exported_pdf_path", storage_path)
 
     return {
@@ -59,7 +59,12 @@ def export_contract_xlsx(
     get_contract_for_profile(contract_id, current_profile)
     xlsx_bytes = export_xlsx(str(contract_id))
     path = _report_path(contract_id, "xlsx")
-    storage_path = upload_file("reports", path, xlsx_bytes)
+    storage_path = upload_file(
+        "reports",
+        path,
+        xlsx_bytes,
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
     _save_export_path(str(contract_id), "exported_xlsx_path", storage_path)
 
     return {

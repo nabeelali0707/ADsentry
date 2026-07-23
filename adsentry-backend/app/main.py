@@ -54,17 +54,14 @@ async def security_headers_middleware(request: Request, call_next) -> Response:
     return response
 
 
-# Trusted Host Middleware — rejects requests with unexpected Host headers
+# Trusted Host Middleware — rejects requests with unexpected Host headers.
+# Host list comes from settings.trusted_hosts (TRUSTED_HOSTS env var) so it
+# can be tightened per-environment without a code change. The default still
+# includes "*" for permissive local/staging use — set TRUSTED_HOSTS to your
+# real production domain(s) and drop the wildcard before going live.
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=[
-        "localhost",
-        "127.0.0.1",
-        "*.vercel.app",         # common Next.js deployment
-        "*.onrender.com",       # common FastAPI deployment
-        "*.railway.app",
-        "*",                    # permissive for local dev; tighten in production
-    ],
+    allowed_hosts=settings.trusted_hosts_list,
 )
 
 app.add_middleware(

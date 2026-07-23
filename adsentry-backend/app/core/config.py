@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     cors_origins: list[str] = Field(default_factory=lambda: ["*"])
 
+    # Comma-separated list for TrustedHostMiddleware. Defaults preserve the
+    # existing permissive dev/staging behavior (including the "*" wildcard);
+    # set TRUSTED_HOSTS in production to your real domain(s) and drop the "*".
+    trusted_hosts: str = "localhost,127.0.0.1,*.vercel.app,*.onrender.com,*.railway.app,*"
+
     supabase_url: str = ""
     supabase_project_id: str = ""
     supabase_publishable_key: str = ""
@@ -28,6 +33,10 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def trusted_hosts_list(self) -> list[str]:
+        return [host.strip() for host in self.trusted_hosts.split(",") if host.strip()]
 
     def validate_secrets(self) -> None:
         """

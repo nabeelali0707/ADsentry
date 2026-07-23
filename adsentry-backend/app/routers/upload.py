@@ -122,6 +122,24 @@ def _storage_path(prefix: str, filename: str | None) -> str:
     return f"{prefix}/{timestamp}-{uuid4()}-{safe_name}"
 
 
+def _resolve_storage_content_type(file: UploadFile) -> str:
+    """
+    Resolve a content-type accepted by the contracts/broadcast-logs storage
+    buckets' allowed_mime_types allowlist. The browser/client-supplied
+    content_type is trusted if it's already an allowed CSV/XLSX type;
+    otherwise it's inferred from the file extension so uploads never get
+    silently defaulted to text/plain (which the buckets reject).
+    """
+    content_type = file.content_type or ""
+    if content_type in CSV_MIME_TYPES or content_type in XLSX_MIME_TYPES:
+        return content_type
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix == ".xlsx":
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    return "text/csv"
+
+
 @router.post(
     "/contracts/upload",
     response_model=ContractUploadResponse,
@@ -159,6 +177,7 @@ async def upload_contract(
         "contracts",
         _storage_path(str(organization_id), file.filename),
         file_bytes,
+        content_type=_resolve_storage_content_type(file),
     )
 
     contract_payload = {
@@ -173,7 +192,6 @@ async def upload_contract(
         get_supabase_client()
         .table("contracts")
         .insert(contract_payload)
-        .select("id, *")
         .execute()
     )
     created_contract = response.data[0] if response.data else None
@@ -229,6 +247,7 @@ async def upload_broadcast_logs(
         "broadcast-logs",
         _storage_path(str(contract_id), file.filename),
         file_bytes,
+        content_type=_resolve_storage_content_type(file),
     )
 
     # Minimal Data Collection: only persist whitelisted BROADCAST_LOG_COLUMNS

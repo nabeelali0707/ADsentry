@@ -164,7 +164,7 @@ def get_ai_summary(contract_id: UUID) -> dict[str, str]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="AI summary not found.",
         )
-    summary = audit_report_resp.data.get("ai_summary_text", "")
+    summary = audit_report_resp.data.get("ai_summary_text") or ""
     return {"summary": summary}
 
 

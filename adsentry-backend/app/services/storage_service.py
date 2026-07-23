@@ -1,9 +1,20 @@
 from app.core.supabase_client import get_supabase_client
 
 
-def upload_file(bucket: str, path: str, file_bytes: bytes) -> str:
+def upload_file(bucket: str, path: str, file_bytes: bytes, content_type: str | None = None) -> str:
+    """
+    Upload raw bytes to Supabase Storage.
+
+    ``content_type`` must be passed for buckets with an ``allowed_mime_types``
+    restriction (contracts/broadcast-logs only accept CSV/XLSX) — without it,
+    the storage client defaults to ``text/plain`` and every upload is
+    rejected with a 400.
+    """
     storage = get_supabase_client().storage.from_(bucket)
-    storage.upload(path, file_bytes, file_options={"upsert": "true"})
+    file_options = {"upsert": "true"}
+    if content_type:
+        file_options["content-type"] = content_type
+    storage.upload(path, file_bytes, file_options=file_options)
     return path
 
 
