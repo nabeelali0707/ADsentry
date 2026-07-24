@@ -10,3 +10,18 @@ openpyxl
 reportlab
 python-dotenv
 psycopg2-binary
+
+# Independent Audio Verification PoC (Dejavu audio fingerprinting).
+# The bcollazo/dejavu PyPI/git package doesn't import cleanly on current
+# Python/SQLAlchemy/SciPy, so a trimmed, compatibility-patched copy is
+# vendored at app/vendor/dejavu (see app/vendor/dejavu/README.md) instead of
+# installed here. These are its real runtime dependencies:
+sqlalchemy
+sqlalchemy_utils
+tenacity
+six
+scipy
+matplotlib
+audioop-lts
+yt-dlp
+pydub

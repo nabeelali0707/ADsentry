@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     database_url: str = ""
     direct_url: str = ""
 
+    # Dejavu audio fingerprinting (Independent Audio Verification PoC): its own
+    # Postgres connection, kept separate from the main Supabase client so its
+    # self-managed tables (songs/fingerprints, renamed below) never touch the
+    # service-role-authenticated ORM path used elsewhere in the app.
+    dejavu_database_url: str = ""
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",

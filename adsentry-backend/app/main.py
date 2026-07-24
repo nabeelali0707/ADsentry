@@ -6,6 +6,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.core.config import settings
 from app.routers import ai_summary
+from app.routers import audio_verification
 from app.routers import audit
 from app.routers import auth
 from app.routers import contracts
@@ -113,3 +114,4 @@ app.include_router(dashboard.router)
 app.include_router(ai_summary.router)
 app.include_router(export.router)
 app.include_router(session.router)   # Session cleanup + audit trail
+app.include_router(audio_verification.router)

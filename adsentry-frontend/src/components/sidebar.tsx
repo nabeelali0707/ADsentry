@@ -6,18 +6,19 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import Button from '@/components/ui/Button';
 import {
-  UploadCloud, 
-  FileText, 
-  LayoutDashboard, 
-  AlertTriangle, 
-  Coins, 
-  Sparkles, 
-  Download, 
-  LogOut, 
-  Menu, 
-  X, 
-  Building2, 
-  UserCircle 
+  UploadCloud,
+  FileText,
+  LayoutDashboard,
+  AlertTriangle,
+  Coins,
+  Sparkles,
+  Download,
+  LogOut,
+  Menu,
+  X,
+  Building2,
+  UserCircle,
+  AudioLines,
 } from 'lucide-react';
 
 const navItems = [
@@ -27,6 +28,7 @@ const navItems = [
   { name: 'Discrepancy Explorer', href: '/discrepancies', icon: AlertTriangle },
   { name: 'Financial Impact', href: '/financial-impact', icon: Coins },
   { name: 'AI Audit Summary', href: '/ai-summary', icon: Sparkles },
+  { name: 'Audio Verification', href: '/audio-verification', icon: AudioLines },
   { name: 'Export Report', href: '/export', icon: Download },
 ];
 

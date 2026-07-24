@@ -86,3 +86,25 @@ class CampaignSummary(BaseModel):
 class ContractDetailResponse(BaseModel):
     contract: dict[str, Any]
     campaign_summary: CampaignSummary
+
+
+# ─── Independent Audio Verification (Dejavu fingerprinting PoC) ───
+
+class FingerprintSourceRequest(BaseModel):
+    youtube_url: str
+    title: str
+
+
+class FingerprintSourceResponse(BaseModel):
+    status: str
+    title: str
+    duration_seconds: float
+
+
+class VerifyClipResponse(BaseModel):
+    found: bool
+    matched_title: str | None = None
+    timestamp_seconds: float | None = None
+    timestamp_formatted: str | None = None
+    confidence: float | None = None
+    reason: str | None = None

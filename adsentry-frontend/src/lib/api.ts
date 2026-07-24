@@ -555,4 +555,42 @@ export const api = {
     if (!response.ok) throw new Error('Failed to load audit trail.');
     return response.json();
   },
+
+  // POST /audio-verification/fingerprint-source
+  fingerprintSource: async (youtubeUrl: string, title: string): Promise<{ status: string; title: string; duration_seconds: number }> => {
+    const response = await fetch(`${API_BASE_URL}/audio-verification/fingerprint-source`, {
+      method: 'POST',
+      headers: await getHeaders(),
+      body: JSON.stringify({ youtube_url: youtubeUrl, title }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => null);
+      throw new Error(err?.detail || 'Failed to fingerprint source recording.');
+    }
+    return response.json();
+  },
+
+  // POST /audio-verification/verify-clip
+  verifyClip: async (file: File): Promise<{
+    found: boolean;
+    matched_title: string | null;
+    timestamp_seconds: number | null;
+    timestamp_formatted: string | null;
+    confidence: number | null;
+    reason?: string;
+  }> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = await getSessionToken();
+    const response = await fetch(`${API_BASE_URL}/audio-verification/verify-clip`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => null);
+      throw new Error(err?.detail || 'Failed to verify audio clip.');
+    }
+    return response.json();
+  },
 };
