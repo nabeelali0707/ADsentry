@@ -325,13 +325,19 @@ export default function UploadPage() {
   };
 
   const downloadSampleTemplate = (type: 'contract' | 'log') => {
+    if (type === 'log') {
+      const link = document.createElement("a");
+      link.setAttribute("href", "/broadcast_log(1).csv");
+      link.setAttribute("download", "broadcast_log(1).csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+
     const headers = type === 'contract' ? CONTRACT_COLUMNS : BROADCAST_LOG_COLUMNS;
     const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" +
-      (type === 'contract' 
-        ? "National Foods,National Ketchup Fiesta 2026,ARY Digital,2026-07-01,2026-07-31,120,30,85000,10200000"
-        : "ARY Digital,2026-07-01,20:15:00,30,NAT-KET-30S\n" +
-          "ARY Digital,2026-07-01,21:30:00,30,NAT-KET-30S\n" +
-          "ARY Digital,2026-07-02,20:45:00,30,NAT-KET-30S");
+      "National Foods,National Ketchup Fiesta 2026,ARY Digital,2026-07-01,2026-07-31,120,30,85000,10200000";
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
