@@ -38,6 +38,12 @@ CONTRACT_COLUMNS = [
     "total_contract_value",
 ]
 
+# Optional: time of day the spot was contracted to air. Not required so
+# existing upload templates that predate this field still validate.
+CONTRACT_OPTIONAL_COLUMNS = [
+    "expected_air_time",
+]
+
 BROADCAST_LOG_COLUMNS = [
     "channel",
     "air_date",
@@ -188,9 +194,12 @@ async def upload_contract(
             detail="Cannot upload contract for a different organization.",
         )
 
-    # Minimal Data Collection: only store whitelisted CONTRACT_COLUMNS
-    raw_row = df.loc[0, CONTRACT_COLUMNS].to_dict()
-    parsed_row = _clean_record(raw_row, allowed_keys=CONTRACT_COLUMNS)
+    # Minimal Data Collection: only store whitelisted CONTRACT_COLUMNS, plus
+    # any optional columns (e.g. expected_air_time) present in this upload.
+    present_optional_columns = [c for c in CONTRACT_OPTIONAL_COLUMNS if c in df.columns]
+    contract_row_columns = CONTRACT_COLUMNS + present_optional_columns
+    raw_row = df.loc[0, contract_row_columns].to_dict()
+    parsed_row = _clean_record(raw_row, allowed_keys=contract_row_columns)
 
     raw_upload_path = upload_file(
         "contracts",

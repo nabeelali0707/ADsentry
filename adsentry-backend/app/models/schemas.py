@@ -17,6 +17,9 @@ class ContractCreate(BaseModel):
     spot_duration_sec: int
     cost_per_airing: Decimal
     total_contract_value: Decimal
+    # Time of day the spot was actually contracted to air, used by the
+    # reconciliation engine to flag OUT_OF_SLOT deviations.
+    expected_air_time: time | None = None
     status: str = "DRAFT"
     raw_upload_path: str | None = None
 
@@ -64,6 +67,7 @@ class ContractUpdate(BaseModel):
     contracted_airings: int | None = None
     spot_duration_sec: int | None = None
     cost_per_airing: Decimal | None = None
+    expected_air_time: time | None = None
     # Discrepancy Detection Accuracy (5.2): allows UI slider to persist tolerance
     duration_tolerance_pct: Decimal | None = None
     corrected_by: UUID | None = None

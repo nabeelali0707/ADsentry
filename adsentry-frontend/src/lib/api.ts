@@ -28,6 +28,8 @@ export interface Contract {
   status: 'DRAFT' | 'CONFIRMED';
   time_window_tolerance_minutes: number;
   compliance_threshold_pct: number;
+  /** Time of day the spot was contracted to air (HH:MM:SS); used to flag OUT_OF_SLOT deviations */
+  expected_air_time?: string | null;
   /** Discrepancy Detection Accuracy (5.2): fraction of contracted duration required (e.g. 0.90) */
   duration_tolerance_pct?: number;
   raw_upload_path?: string | null;
@@ -117,6 +119,7 @@ const mockContracts: Record<string, Contract> = {
     time_window_tolerance_minutes: 15,
     compliance_threshold_pct: 97.00,
     duration_tolerance_pct: 0.90,
+    expected_air_time: '20:15:00',
     created_at: new Date('2026-07-01T12:00:00Z').toISOString(),
     updated_at: new Date('2026-07-01T12:00:00Z').toISOString(),
   }

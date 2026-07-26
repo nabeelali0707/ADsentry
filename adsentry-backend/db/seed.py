@@ -29,6 +29,7 @@ try:
     # Skip profile insertion because profiles.id references auth.users(id)
     # Insert a sample contract (National Foods example)
     contract_id = str(uuid.uuid4())
+    scheduled = time(20, 0, 0)
     contract_data = {
         "id": contract_id,
         "organization_id": org_id,
@@ -44,17 +45,17 @@ try:
         "total_contract_value": 150000.00,
         "time_window_tolerance_minutes": 15,
         "compliance_threshold_pct": 97.00,
+        "expected_air_time": scheduled,
         "status": "DRAFT",
     }
     cur.execute(
-        """INSERT INTO contracts (id, organization_id, created_by, brand_name, campaign_name, channel, start_date, end_date, contracted_airings, spot_duration_sec, cost_per_airing, total_contract_value, time_window_tolerance_minutes, compliance_threshold_pct, status)
-        VALUES (%(id)s, %(organization_id)s, %(created_by)s, %(brand_name)s, %(campaign_name)s, %(channel)s, %(start_date)s, %(end_date)s, %(contracted_airings)s, %(spot_duration_sec)s, %(cost_per_airing)s, %(total_contract_value)s, %(time_window_tolerance_minutes)s, %(compliance_threshold_pct)s, %(status)s)""",
+        """INSERT INTO contracts (id, organization_id, created_by, brand_name, campaign_name, channel, start_date, end_date, contracted_airings, spot_duration_sec, cost_per_airing, total_contract_value, time_window_tolerance_minutes, compliance_threshold_pct, expected_air_time, status)
+        VALUES (%(id)s, %(organization_id)s, %(created_by)s, %(brand_name)s, %(campaign_name)s, %(channel)s, %(start_date)s, %(end_date)s, %(contracted_airings)s, %(spot_duration_sec)s, %(cost_per_airing)s, %(total_contract_value)s, %(time_window_tolerance_minutes)s, %(compliance_threshold_pct)s, %(expected_air_time)s, %(status)s)""",
         contract_data,
     )
 
     # Generate ~50 broadcast log entries with mixed deviations (air_time never null)
     logs = []
-    scheduled = time(20, 0, 0)
     for i in range(50):
         air_date = contract_data["start_date"] + timedelta(days=random.randint(0, 30))
         deviation = random.choice(["ON_TIME", "MISSED", "SHORTENED", "OUT_OF_SLOT"])

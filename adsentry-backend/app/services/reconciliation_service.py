@@ -32,6 +32,7 @@ def _expected_schedule(contract: dict[str, Any]) -> pd.DataFrame:
                 "channel",
                 "air_date",
                 "expected_datetime",
+                "has_expected_time",
                 "spot_duration_sec",
                 "cost_per_airing",
             ]
@@ -40,12 +41,26 @@ def _expected_schedule(contract: dict[str, Any]) -> pd.DataFrame:
     day_indexes = np.arange(contracted_airings) % len(campaign_days)
     air_dates = campaign_days[day_indexes]
 
+    # The time of day a spot was actually contracted to air (Contract Review
+    # UI). Older contracts created before this field existed have it as None —
+    # for those, the OUT_OF_SLOT time-window check is skipped entirely
+    # (see `within_window` below) rather than comparing against a meaningless
+    # midnight placeholder, which used to flag nearly every airing as
+    # OUT_OF_SLOT.
+    expected_air_time = contract.get("expected_air_time")
+    has_expected_time = expected_air_time is not None
+    if has_expected_time:
+        expected_datetime = air_dates + pd.to_timedelta(str(expected_air_time))
+    else:
+        expected_datetime = air_dates
+
     expected = pd.DataFrame(
         {
             "expected_slot_id": np.arange(contracted_airings),
             "channel": contract["channel"],
             "air_date": air_dates,
-            "expected_datetime": air_dates,
+            "expected_datetime": expected_datetime,
+            "has_expected_time": has_expected_time,
             "spot_duration_sec": int(contract["spot_duration_sec"]),
             "cost_per_airing": float(Decimal(str(contract["cost_per_airing"]))),
         }
@@ -145,7 +160,12 @@ def run_reconciliation(
     matched["time_delta_minutes"] = (
         (matched["actual_datetime"] - matched["expected_datetime"]).abs().dt.total_seconds() / 60
     )
-    matched["within_window"] = matched["time_delta_minutes"].le(tolerance_minutes)
+    # Without a recorded expected_air_time there's nothing meaningful to
+    # compare the actual air time against, so treat those slots as always
+    # within window instead of penalizing them against a midnight placeholder.
+    matched["within_window"] = (~matched["has_expected_time"]) | matched["time_delta_minutes"].le(
+        tolerance_minutes
+    )
     matched["has_log"] = matched["id"].notna()
 
     # ── MISSED ────────────────────────────────────────────────────────────

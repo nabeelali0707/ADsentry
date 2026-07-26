@@ -46,6 +46,7 @@ function ContractReviewContent() {
   const [contractedAirings, setContractedAirings] = useState<number>(0);
   const [spotDurationSec, setSpotDurationSec] = useState<number>(0);
   const [costPerAiring, setCostPerAiring] = useState<number>(0);
+  const [expectedAirTime, setExpectedAirTime] = useState<string>('');
   const [tolerance, setTolerance] = useState<number>(15);
   const [threshold, setThreshold] = useState<number>(97.00);
   /** Discrepancy Detection Accuracy (5.2): configurable SHORTENED threshold */
@@ -86,6 +87,8 @@ function ContractReviewContent() {
       setContractedAirings(activeContract.contracted_airings);
       setSpotDurationSec(activeContract.spot_duration_sec);
       setCostPerAiring(activeContract.cost_per_airing);
+      // Backend stores HH:MM:SS; <input type="time"> wants HH:MM
+      setExpectedAirTime((activeContract.expected_air_time ?? '').slice(0, 5));
       setTolerance(activeContract.time_window_tolerance_minutes);
       setThreshold(activeContract.compliance_threshold_pct);
       // Default duration_tolerance_pct stored as 0–1 fraction, UI shows 0–100
@@ -149,6 +152,7 @@ function ContractReviewContent() {
         contracted_airings: Number(contractedAirings),
         spot_duration_sec: Number(spotDurationSec),
         cost_per_airing: Number(costPerAiring),
+        expected_air_time: expectedAirTime ? `${expectedAirTime}:00` : undefined,
         time_window_tolerance_minutes: Number(tolerance),
         compliance_threshold_pct: Number(threshold),
         duration_tolerance_pct: durationTolerance / 100,
@@ -178,6 +182,7 @@ function ContractReviewContent() {
         contracted_airings: Number(contractedAirings),
         spot_duration_sec: Number(spotDurationSec),
         cost_per_airing: Number(costPerAiring),
+        expected_air_time: expectedAirTime ? `${expectedAirTime}:00` : undefined,
         time_window_tolerance_minutes: Number(tolerance),
         compliance_threshold_pct: Number(threshold),
         duration_tolerance_pct: durationTolerance / 100,
@@ -270,6 +275,14 @@ function ContractReviewContent() {
                   <Coins className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-slate-500" />
                   <input type="number" value={costPerAiring} onChange={(e) => setCostPerAiring(Number(e.target.value))} className="w-full pl-11 pr-4 py-3 bg-slate-950 border border-slate-850 focus:border-teal-accent/50 focus:ring-1 focus:ring-teal-accent/50 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none transition-all" />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Expected Air Time</label>
+                <div className="relative">
+                  <Clock className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-slate-500" />
+                  <input type="time" value={expectedAirTime} onChange={(e) => setExpectedAirTime(e.target.value)} className="w-full pl-11 pr-4 py-3 bg-slate-950 border border-slate-850 focus:border-teal-accent/50 focus:ring-1 focus:ring-teal-accent/50 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none transition-all" />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">Time of day the spot is contracted to air. Used to flag OUT_OF_SLOT deviations.</p>
               </div>
               <div>
                 <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Start Date</label>

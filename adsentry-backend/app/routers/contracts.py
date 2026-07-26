@@ -18,6 +18,7 @@ EDITABLE_FIELDS = {
     "contracted_airings",
     "spot_duration_sec",
     "cost_per_airing",
+    "expected_air_time",
     # Discrepancy Detection Accuracy (5.2): configurable duration tolerance
     "duration_tolerance_pct",
 }
@@ -45,8 +46,17 @@ def _get_contract(contract_id: UUID) -> dict[str, Any]:
 def _serialize_value(value: Any) -> str | None:
     if value is None:
         return None
-    if isinstance(value, Decimal):
-        return str(value)
+    if isinstance(value, (Decimal, float)):
+        # Normalize so a DB-sourced float (e.g. 85000.0) and a payload-sourced
+        # Decimal (e.g. Decimal("85000")) serialize identically instead of
+        # diffing as "85000.0" vs "85000" and logging a false correction.
+        # (Decimal.normalize() is avoided here since it switches whole
+        # numbers like 85000 into scientific notation, e.g. "8.5E+4".)
+        as_decimal = Decimal(str(value))
+        integral = as_decimal.to_integral_value()
+        if as_decimal == integral:
+            return str(integral)
+        return format(as_decimal, "f")
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)
