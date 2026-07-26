@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useEffect, useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuditStore } from '@/store/useAuditStore';
 import { api, formatPKR, Contract, AuditCorrection } from '@/lib/api';
 import Button from '@/components/ui/Button';
@@ -26,8 +26,10 @@ import {
   Target
 } from 'lucide-react';
 
-export default function ContractReviewPage() {
+function ContractReviewContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const contractIdParam = searchParams.get('contractId');
   const { activeContract, setContract, setReport } = useAuditStore();
 
   const [loading, setLoading] = useState(false);
@@ -53,6 +55,28 @@ export default function ContractReviewPage() {
   const [auditTrailOpen, setAuditTrailOpen] = useState(false);
   const [auditTrail, setAuditTrail] = useState<AuditCorrection[]>([]);
   const [loadingTrail, setLoadingTrail] = useState(false);
+  const [attemptedFallback, setAttemptedFallback] = useState(false);
+
+  useEffect(() => {
+    if (!activeContract && contractIdParam && !attemptedFallback) {
+      const fetchContractFallback = async () => {
+        setLoading(true);
+        setErrorMsg('');
+        try {
+          const res = await api.getContract(contractIdParam);
+          setContract(res.contract);
+        } catch (err: any) {
+          setErrorMsg(err.message || 'Failed to retrieve contract details.');
+        } finally {
+          setLoading(false);
+          setAttemptedFallback(true);
+        }
+      };
+      fetchContractFallback();
+    } else if (!contractIdParam) {
+      setAttemptedFallback(true);
+    }
+  }, [activeContract, contractIdParam, attemptedFallback, setContract]);
 
   useEffect(() => {
     if (activeContract) {
@@ -89,6 +113,15 @@ export default function ContractReviewPage() {
   };
 
   if (!activeContract) {
+    if (contractIdParam && !attemptedFallback) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
+          <div className="h-8 w-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+          <p className="font-medium text-sm">Loading contract details...</p>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
         <AlertTriangle className="h-10 w-10 text-yellow-500" />
@@ -422,5 +455,18 @@ export default function ContractReviewPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function ContractReviewPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
+        <div className="h-8 w-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="font-medium text-sm">Loading contract details...</p>
+      </div>
+    }>
+      <ContractReviewContent />
+    </Suspense>
   );
 }

@@ -316,7 +316,7 @@ export default function UploadPage() {
         setProcessingTimeMs(logRes.processingTimeMs);
       }
 
-      router.push('/contract-review');
+      router.push(`/contract-review?contractId=${uploadRes.contract.id}`);
     } catch (err: any) {
       setErrorMessage(err.message || 'An error occurred during audit setup.');
     } finally {
@@ -329,7 +329,9 @@ export default function UploadPage() {
     const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" +
       (type === 'contract' 
         ? "National Foods,National Ketchup Fiesta 2026,ARY Digital,2026-07-01,2026-07-31,120,30,85000,10200000"
-        : "ARY Digital,2026-07-01,20:15:00,30,NAT-KET-30S");
+        : "ARY Digital,2026-07-01,20:15:00,30,NAT-KET-30S\n" +
+          "ARY Digital,2026-07-01,21:30:00,30,NAT-KET-30S\n" +
+          "ARY Digital,2026-07-02,20:45:00,30,NAT-KET-30S");
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
