@@ -1,3 +1,5 @@
+# This file targets Railway's Nixpacks Python builder.
+# Note: ffmpeg is provided via nixpacks.toml, not pip.
 fastapi
 uvicorn
 supabase
@@ -22,6 +24,6 @@ tenacity
 six
 scipy
 matplotlib
-audioop-lts
+audioop-lts; python_version >= "3.13"
 yt-dlp
 pydub
