@@ -85,28 +85,28 @@ class Dejavu(object):
         pool.close()
         pool.join()
 
-    def fingerprint_file(self, filepath, song_name=None):
+    def fingerprint_file(self, filepath, song_name=None, organization_id=None):
         songname = decoder.path_to_songname(filepath)
         file_hash = decoder.unique_hash(filepath)
         song_name = song_name or songname
         # don't refingerprint already fingerprinted files
-        if self.db.get_song_by_hash(file_hash) is not None:
+        if self.db.get_song_by_hash(file_hash, organization_id=organization_id) is not None:
             logger.info("%s already fingerprinted, continuing..." % song_name)
         else:
             song_name, hashes, file_hash = _fingerprint_worker(
                 filepath, self.limit, song_name=song_name
             )
-            sid = self.db.insert_song(song_name, file_hash)
+            sid = self.db.insert_song(song_name, file_hash, organization_id=organization_id)
 
             self.db.insert_hashes(sid, hashes)
             self.db.set_song_fingerprinted(sid)
         return file_hash
 
-    def find_matches(self, samples, Fs=fingerprint.DEFAULT_FS):
+    def find_matches(self, samples, Fs=fingerprint.DEFAULT_FS, organization_id=None):
         hashes = fingerprint.fingerprint(samples, Fs=Fs)
-        return self.db.return_matches(hashes)
+        return self.db.return_matches(hashes, organization_id=organization_id)
 
-    def align_matches(self, matches):
+    def align_matches(self, matches, organization_id=None):
         """
             Finds hash matches that align in time with other matches and finds
             consensus about which hashes are "true" signal from the audio.
@@ -132,7 +132,7 @@ class Dejavu(object):
                 song_id = sid
 
         # extract idenfication
-        song = self.db.get_song_by_id(song_id)
+        song = self.db.get_song_by_id(song_id, organization_id=organization_id)
         if song:
             songname = song.name
         else:

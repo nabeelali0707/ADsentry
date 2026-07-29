@@ -35,7 +35,7 @@ def _get_dejavu() -> Dejavu:
         ) from exc
 
 
-def fingerprint_recording(file_path: str, title: str) -> None:
+def fingerprint_recording(file_path: str, title: str, organization_id: str) -> None:
     """
     Adds a long recording into Dejavu's fingerprint database under the given
     title — the "haystack" that verify_clip's short reference clips are later
@@ -43,7 +43,7 @@ def fingerprint_recording(file_path: str, title: str) -> None:
     content is a no-op (Dejavu keys on the file's content hash).
     """
     djv = _get_dejavu()
-    djv.fingerprint_file(file_path, song_name=title)
+    djv.fingerprint_file(file_path, song_name=title, organization_id=organization_id)
 
 
 def download_youtube_audio(youtube_url: str, output_path: str) -> str:
@@ -105,12 +105,13 @@ def get_audio_duration_seconds(file_path: str) -> float:
         ) from exc
 
 
-def has_fingerprinted_sources() -> bool:
+def has_fingerprinted_sources(organization_id: str) -> bool:
     try:
         djv = _get_dejavu()
         count = (
             djv.db.session.query(Song)
             .filter(Song.fingerprinted.is_(True))
+            .filter(Song.organization_id == organization_id)
             .count()
         )
         return count > 0
@@ -142,7 +143,7 @@ def _confidence_pct(clip_file_path: str, match: dict[str, Any]) -> float:
         return 0.0
 
 
-def recognize_clip(clip_file_path: str) -> dict[str, Any] | None:
+def recognize_clip(clip_file_path: str, organization_id: str) -> dict[str, Any] | None:
     """
     Queries a short reference clip against everything fingerprinted so far.
     Returns {matched_title, offset_seconds, confidence} on a match, or None
@@ -154,7 +155,7 @@ def recognize_clip(clip_file_path: str) -> dict[str, Any] | None:
 
     try:
         djv = _get_dejavu()
-        match = djv.recognize(FileRecognizer, clip_file_path)
+        match = djv.recognize(FileRecognizer, clip_file_path, organization_id=organization_id)
     except Exception as exc:
         exc_str = str(exc)
         if "database connection failed" in exc_str or "ffmpeg is missing" in exc_str:

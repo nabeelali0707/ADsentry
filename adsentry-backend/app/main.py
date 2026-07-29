@@ -85,25 +85,27 @@ async def on_startup() -> None:
     present before the server starts accepting requests. Logs confirmation
     WITHOUT revealing key values.
     """
-    # 1. Verify ffmpeg is on PATH (Fail fast if missing)
+    # 1. Verify ffmpeg is on PATH. Audio verification degrades if missing.
     import shutil
     if not shutil.which("ffmpeg"):
-        raise RuntimeError(
-            "CRITICAL ERROR: ffmpeg executable was not found on PATH. "
+        logger.warning(
+            "Audio verification disabled: ffmpeg executable was not found on PATH. "
             "The ADsentry backend depends on ffmpeg for both the standard and live "
             "audio verification features. Please install ffmpeg and ensure it is available on the system PATH."
         )
-    logger.info("✓ ffmpeg executable found on PATH.")
+    else:
+        logger.info("✓ ffmpeg executable found on PATH.")
 
-    # 2. Verify DEJAVU_DATABASE_URL is set (Fail fast if empty)
+    # 2. Verify DEJAVU_DATABASE_URL is set. Audio fingerprinting degrades if empty.
     if not settings.dejavu_database_url or not settings.dejavu_database_url.strip():
-        raise RuntimeError(
-            "CRITICAL ERROR: DEJAVU_DATABASE_URL is not set or is empty. "
+        logger.warning(
+            "Audio verification disabled: DEJAVU_DATABASE_URL is not set or is empty. "
             "This environment variable must be set to a valid PostgreSQL connection string "
             "for the audio fingerprinting/matching engine to function. Please set it in your .env "
             "or environment variables (it can reuse the same value as DATABASE_URL)."
         )
-    logger.info("✓ DEJAVU_DATABASE_URL is configured.")
+    else:
+        logger.info("✓ DEJAVU_DATABASE_URL is configured.")
 
     try:
         settings.validate_secrets()
@@ -112,23 +114,28 @@ async def on_startup() -> None:
         logger.warning("⚠ Secret validation warning: %s", exc)
         logger.warning("  Running in degraded mode — some features may be unavailable.")
 
+    # 3. Start Live Verification Scheduler
+    import asyncio
+    from app.services.live_monitor_service import live_scheduler_loop
+    asyncio.create_task(live_scheduler_loop())
+    logger.info("✓ Live broadcast verification scheduler started.")
+
 
 @app.on_event("shutdown")
 async def on_shutdown() -> None:
     """
     Kills any running ffmpeg subprocesses of live verification sessions on server shutdown/restart.
     """
-    from app.services.live_monitor_service import active_sessions
+    from app.services.live_monitor_service import active_processes
     logger.info("Shutdown event triggered — cleaning up active live verification sessions.")
-    for session_id, session in list(active_sessions.items()):
-        if session.get("status") in ("starting", "running"):
-            proc = session.get("process")
-            if proc and proc.returncode is None:
-                try:
-                    proc.terminate()
-                    logger.info(f"Terminated ffmpeg subprocess for live session {session_id}")
-                except Exception as exc:
-                    logger.error(f"Failed to terminate ffmpeg subprocess for live session {session_id}: {exc}")
+    for session_id, proc_handle in list(active_processes.items()):
+        proc = proc_handle.get("process")
+        if proc and proc.returncode is None:
+            try:
+                proc.terminate()
+                logger.info(f"Terminated ffmpeg subprocess for live session {session_id}")
+            except Exception as exc:
+                logger.error(f"Failed to terminate ffmpeg subprocess for live session {session_id}: {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -94,14 +94,23 @@ export interface LiveVerificationMatch {
   offset_seconds: number;
   confidence: number;
   timestamp: string; // ISO datetime
+  evidence_url?: string | null;
+}
+
+export interface LiveVerificationMissedAiring {
+  expected_value: string;
+  air_date: string;
+  financial_impact: number;
 }
 
 export interface LiveVerificationStatusResponse {
   session_id: string;
   youtube_url: string;
+  contract_id: string;
   status: 'starting' | 'running' | 'stopped' | 'error';
   started_at: string; // ISO datetime
   matches: LiveVerificationMatch[];
+  missed_airings?: LiveVerificationMissedAiring[];
   error_message?: string | null;
 }
 
@@ -300,6 +309,17 @@ export const api = {
     const processingTimeMs = Number(response.headers.get('X-Processing-Time-Ms') || 0);
     const data = await response.json();
     return { ...data, processingTimeMs };
+  },
+
+  // GET /contracts
+  listContracts: async (): Promise<Contract[]> => {
+    if (USE_MOCK_DATA) {
+      await delay(300);
+      return Object.values(mockContracts);
+    }
+    const response = await fetch(`${API_BASE_URL}/contracts`, { headers: await getHeaders() });
+    if (!response.ok) throw new Error('Failed to list contracts.');
+    return response.json();
   },
 
   // GET /contracts/{contract_id}
@@ -614,11 +634,11 @@ export const api = {
   },
 
   // POST /audio-verification/live/start
-  startLiveVerification: async (youtubeUrl: string): Promise<{ session_id: string }> => {
+  startLiveVerification: async (youtubeUrl: string, contractId: string): Promise<{ session_id: string }> => {
     const response = await fetch(`${API_BASE_URL}/audio-verification/live/start`, {
       method: 'POST',
       headers: await getHeaders(),
-      body: JSON.stringify({ youtube_url: youtubeUrl }),
+      body: JSON.stringify({ youtube_url: youtubeUrl, contract_id: contractId }),
     });
     if (!response.ok) {
       const err = await response.json().catch(() => null);

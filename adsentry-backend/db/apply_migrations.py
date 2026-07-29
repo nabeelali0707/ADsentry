@@ -41,7 +41,12 @@ def main():
         sys.exit(1)
 
     migrations_dir = project_root / 'db' / 'migrations'
-    migration_files = ['0001_init_schema.sql', '0002_rls_policies.sql']
+    migration_files = [
+        '0001_init_schema.sql',
+        '0002_rls_policies.sql',
+        '0003_add_expected_air_time.sql',
+        '0004_live_verification.sql'
+    ]
 
     for filename in migration_files:
         file_path = migrations_dir / filename

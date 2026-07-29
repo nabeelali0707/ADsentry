@@ -118,6 +118,7 @@ class VerifyClipResponse(BaseModel):
 
 class LiveVerificationStartRequest(BaseModel):
     youtube_url: str
+    contract_id: UUID
 
 
 class LiveVerificationStartResponse(BaseModel):
@@ -129,12 +130,21 @@ class LiveVerificationMatch(BaseModel):
     offset_seconds: float
     confidence: float
     timestamp: datetime
+    evidence_url: str | None = None
+
+
+class LiveVerificationMissedAiring(BaseModel):
+    expected_value: str
+    air_date: str
+    financial_impact: float
 
 
 class LiveVerificationStatusResponse(BaseModel):
     session_id: str
     youtube_url: str
+    contract_id: UUID
     status: str
     started_at: datetime
     matches: list[LiveVerificationMatch]
+    missed_airings: list[LiveVerificationMissedAiring] = []
     error_message: str | None = None

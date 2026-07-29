@@ -33,7 +33,8 @@ import {
   FileCheck2,
   Percent,
   RefreshCw,
-  Coins
+  Coins,
+  Radio,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -239,6 +240,39 @@ export default function DashboardPage() {
 
         </div>
       </div>
+
+      {/* Live Broadcast Verification Stats (Phase 5) */}
+      {dashboardData.live_verification_stats && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+            <Radio className={`h-5 w-5 ${dashboardData.live_verification_stats.active_sessions_count > 0 ? 'text-rose-550 animate-pulse' : 'text-teal-accent'}`} />
+            Live Broadcast Verification Stats (Today)
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <StatCard
+              label="Active Live Sessions"
+              value={dashboardData.live_verification_stats.active_sessions_count}
+              icon={Tv}
+              tone={dashboardData.live_verification_stats.active_sessions_count > 0 ? "success" : "default"}
+              description="Running live streams currently monitored."
+            />
+            <StatCard
+              label="Matches Logged Today"
+              value={dashboardData.live_verification_stats.matches_today_count}
+              icon={CheckCircle}
+              tone="success"
+              description="Independent audio match events captured today."
+            />
+            <StatCard
+              label="Live Missed Airings Today"
+              value={dashboardData.live_verification_stats.missed_today_count}
+              icon={AlertTriangle}
+              tone="danger"
+              description="Expected spots flagged as MISSED today in real-time."
+            />
+          </div>
+        </div>
+      )}
 
       {/* Recharts Graphical Dashboards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

@@ -23,6 +23,7 @@ import {
   Activity,
   Play,
   Square,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function AudioVerificationPage() {
@@ -91,11 +92,15 @@ export default function AudioVerificationPage() {
   };
 
   // Live Monitor section state
+  const [contracts, setContracts] = useState<any[]>([]);
+  const [selectedContractId, setSelectedContractId] = useState<string>('');
+  const [loadingContracts, setLoadingContracts] = useState(false);
   const [liveUrl, setLiveUrl] = useState('');
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
   const [liveMatches, setLiveMatches] = useState<any[]>([]);
+  const [liveMissedAirings, setLiveMissedAirings] = useState<any[]>([]);
   const [liveError, setLiveError] = useState('');
   const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
   const [startingLive, setStartingLive] = useState(false);
@@ -103,16 +108,35 @@ export default function AudioVerificationPage() {
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
+  useEffect(() => {
+    const fetchContracts = async () => {
+      setLoadingContracts(true);
+      try {
+        const list = await api.listContracts();
+        setContracts(list);
+        if (list.length > 0) {
+          setSelectedContractId(list[0].id);
+        }
+      } catch (err: any) {
+        console.error('Failed to load contracts:', err);
+      } finally {
+        setLoadingContracts(false);
+      }
+    };
+    fetchContracts();
+  }, []);
+
   const startLiveMonitor = async () => {
-    if (!liveUrl.trim()) return;
+    if (!liveUrl.trim() || !selectedContractId) return;
     setStartingLive(true);
     setLiveError('');
     setLiveMatches([]);
+    setLiveMissedAirings([]);
     setLiveElapsedSeconds(0);
     setLiveStatus('starting');
     
     try {
-      const res = await api.startLiveVerification(liveUrl.trim());
+      const res = await api.startLiveVerification(liveUrl.trim(), selectedContractId);
       setLiveSessionId(res.session_id);
       setIsMonitoring(true);
       
@@ -145,6 +169,12 @@ export default function AudioVerificationPage() {
           (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
         );
         setLiveMatches(sorted);
+      }
+      if (res.missed_airings) {
+        const sortedMissed = [...res.missed_airings].sort(
+          (a, b) => new Date(b.expected_value).getTime() - new Date(a.expected_value).getTime()
+        );
+        setLiveMissedAirings(sortedMissed);
       }
       
       if (res.status === 'error' || res.status === 'stopped') {
@@ -383,33 +413,63 @@ export default function AudioVerificationPage() {
             Ingest a YouTube Live URL to start a background monitor capture segmenting the stream and matching it against your database in real-time.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              type="text"
-              value={liveUrl}
-              onChange={(e) => setLiveUrl(e.target.value)}
-              disabled={isMonitoring}
-              placeholder="https://www.youtube.com/watch?v=... (YouTube Live URL)"
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white px-3 py-2.5 focus:outline-none focus:border-teal-accent/50 disabled:opacity-60"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xxs font-bold text-slate-400 uppercase tracking-wider">Select Target Contract</label>
+              <select
+                value={selectedContractId}
+                onChange={(e) => setSelectedContractId(e.target.value)}
+                disabled={isMonitoring}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg text-sm text-white px-3 py-2.5 focus:outline-none focus:border-teal-accent/50 disabled:opacity-60"
+              >
+                {loadingContracts ? (
+                  <option value="">Loading contracts...</option>
+                ) : contracts.length === 0 ? (
+                  <option value="">No contracts available</option>
+                ) : (
+                  contracts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.campaign_name} ({c.brand_name}) - {c.channel}
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xxs font-bold text-slate-400 uppercase tracking-wider">YouTube Live URL</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={liveUrl}
+                  onChange={(e) => setLiveUrl(e.target.value)}
+                  disabled={isMonitoring}
+                  placeholder="https://www.youtube.com/watch?v=... (YouTube Live URL)"
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white px-3 py-2.5 focus:outline-none focus:border-teal-accent/50 disabled:opacity-60"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end">
             {isMonitoring ? (
               <Button
                 variant="danger"
                 onClick={handleStopLiveMonitor}
-                className="bg-rose-600 hover:bg-rose-700 text-white shrink-0"
+                className="bg-rose-600 hover:bg-rose-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-1.5"
               >
-                <Square className="h-4 w-4 mr-1.5 shrink-0" />
+                <Square className="h-4 w-4 shrink-0" />
                 Stop Monitor
               </Button>
             ) : (
               <Button
                 variant="primary"
                 onClick={startLiveMonitor}
-                disabled={!liveUrl.trim()}
+                disabled={!liveUrl.trim() || !selectedContractId}
                 loading={startingLive}
-                className="shrink-0"
+                className="px-5 py-2.5 rounded-lg flex items-center gap-1.5"
               >
-                <Play className="h-4 w-4 mr-1.5 shrink-0" />
+                <Play className="h-4 w-4 shrink-0" />
                 Start Monitor
               </Button>
             )}
@@ -431,8 +491,8 @@ export default function AudioVerificationPage() {
                 <p className="text-sm font-semibold text-white">{formatElapsed(liveElapsedSeconds)}</p>
               </div>
               <div className="col-span-2 sm:col-span-1 space-y-0.5">
-                <span className="text-xxs font-bold text-slate-500 uppercase tracking-wider">Matches Logged</span>
-                <p className="text-sm font-semibold text-white">{liveMatches.length}</p>
+                <span className="text-xxs font-bold text-slate-500 uppercase tracking-wider">Matches / Missed</span>
+                <p className="text-sm font-semibold text-white">{liveMatches.length} / {liveMissedAirings.length}</p>
               </div>
             </div>
           )}
@@ -452,9 +512,49 @@ export default function AudioVerificationPage() {
                         Match offset: {Math.round(match.offset_seconds)}s • Logged at {new Date(match.timestamp).toLocaleTimeString()}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1 text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded-full border border-emerald-500/10 text-xxs font-semibold">
-                      <Gauge className="h-3 w-3" />
-                      {match.confidence.toFixed(1)}% Conf
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded-full border border-emerald-500/10 text-xxs font-semibold">
+                        <Gauge className="h-3 w-3" />
+                        {match.confidence.toFixed(1)}% Conf
+                      </div>
+                      {match.evidence_url && (
+                        <button
+                          onClick={() => {
+                            const audio = new Audio(match.evidence_url!);
+                            audio.play().catch(e => console.error("Audio playback error:", e));
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-teal-500/10 text-teal-accent hover:bg-teal-500/20 border border-teal-500/20 hover:border-teal-500/30 transition-colors flex items-center gap-1 text-xxs font-bold"
+                          title="Play match evidence snippet"
+                        >
+                          <Play className="h-3 w-3 shrink-0 fill-current" />
+                          Play Clip
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isMonitoring && liveMissedAirings.length > 0 && (
+            <div className="space-y-2.5">
+              <h3 className="text-xs font-semibold text-rose-400">Missed Airing Discrepancies Flagged (Real-time)</h3>
+              <div className="max-h-40 overflow-y-auto border border-rose-950/40 rounded-xl divide-y divide-rose-950/20 bg-rose-950/5">
+                {liveMissedAirings.map((missed, idx) => (
+                  <div key={idx} className="p-3 flex items-start justify-between gap-4 hover:bg-rose-900/5 transition-colors">
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-rose-300 leading-none">
+                        MISSED: Contract Expected Slot
+                      </p>
+                      <p className="text-xxs text-rose-400/80 flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        Scheduled: {missed.expected_value}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 text-rose-400 bg-rose-500/5 px-2 py-0.5 rounded-full border border-rose-500/10 text-xxs font-semibold">
+                      <AlertTriangle className="h-3 w-3" />
+                      Exposure: Rs. {Math.round(missed.financial_impact).toLocaleString()}
                     </div>
                   </div>
                 ))}

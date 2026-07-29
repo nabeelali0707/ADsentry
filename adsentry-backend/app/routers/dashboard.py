@@ -172,6 +172,54 @@ def get_dashboard(
     if compliance_rate <= 0:
         compliance_rate = 0.1
 
+    # ── Live verification stats (Phase 5) ──
+    active_sessions_resp = (
+        get_supabase_client()
+        .table("live_sessions")
+        .select("id")
+        .eq("contract_id", contract_id_str)
+        .in_("status", ["starting", "running"])
+        .execute()
+    )
+    active_sessions_count = len(active_sessions_resp.data or [])
+
+    session_ids = [
+        s["id"] for s in (
+            get_supabase_client()
+            .table("live_sessions")
+            .select("id")
+            .eq("contract_id", contract_id_str)
+            .execute()
+            .data
+            or []
+        )
+    ]
+    
+    matches_today_count = 0
+    if session_ids:
+        today_str = pd.Timestamp.now().normalize().isoformat()
+        matches_resp = (
+            get_supabase_client()
+            .table("live_matches")
+            .select("id")
+            .in_("session_id", session_ids)
+            .gte("matched_at", today_str)
+            .execute()
+        )
+        matches_today_count = len(matches_resp.data or [])
+
+    today_date_str = pd.Timestamp.now().strftime("%Y-%m-%d")
+    missed_today_resp = (
+        get_supabase_client()
+        .table("discrepancies")
+        .select("id")
+        .eq("contract_id", contract_id_str)
+        .eq("type", "MISSED")
+        .eq("air_date", today_date_str)
+        .execute()
+    )
+    missed_today_count = len(missed_today_resp.data or [])
+
     result = {
         "compliance_ring": {
             "rate": compliance_rate,
@@ -185,6 +233,11 @@ def get_dashboard(
         },
         "weekly_trend": weekly_trend,
         "channel_breakdown": channel_breakdown,
+        "live_verification_stats": {
+            "active_sessions_count": active_sessions_count,
+            "matches_today_count": matches_today_count,
+            "missed_today_count": missed_today_count,
+        }
     }
 
     cache_set(cache_key, result, ttl=_DASHBOARD_TTL)

@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status, Depends
 
 from app.core.supabase_client import get_supabase_client
 from app.core.auth import get_current_profile, require_role, get_contract_for_profile
-from app.models.schemas import ContractDetailResponse, ContractUpdate
+from app.models.schemas import ContractDetailResponse, ContractUpdate, ContractOut
 
 
 router = APIRouter(prefix="/contracts", tags=["contracts"], dependencies=[Depends(get_current_profile)])
@@ -75,6 +75,20 @@ def _campaign_summary(contract: dict[str, Any]) -> dict[str, Any]:
         },
         "contracted_spots": contract["contracted_airings"],
     }
+
+
+@router.get("", response_model=list[ContractOut])
+def list_contracts(
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> list[dict[str, Any]]:
+    supabase = get_supabase_client()
+    response = (
+        supabase.table("contracts")
+        .select("*")
+        .eq("organization_id", str(current_profile["organization_id"]))
+        .execute()
+    )
+    return response.data or []
 
 
 @router.get("/{contract_id}", response_model=ContractDetailResponse)

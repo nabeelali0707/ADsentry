@@ -2,10 +2,12 @@ import logging
 import tempfile
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.core.auth import get_current_profile
+from app.core.auth import get_current_profile, get_contract_for_profile
+from app.core.supabase_client import get_supabase_client
 from app.models.schemas import (
     FingerprintSourceRequest,
     FingerprintSourceResponse,
@@ -22,7 +24,6 @@ from app.services.audio_verification_service import (
     recognize_clip,
 )
 from app.services.live_monitor_service import (
-    active_sessions,
     start_live_verification_session,
     stop_live_verification_session,
     get_live_verification_session_status,
@@ -150,17 +151,31 @@ async def start_live_verification(
     payload: LiveVerificationStartRequest,
     current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, Any]:
-    # 1. Enforce one active live session per user at a time
+    # 1. Verify that user belongs to the contract's organization
+    get_contract_for_profile(payload.contract_id, current_profile)
+
+    # 2. Enforce one active live session per user at a time
     user_id = current_profile["id"]
-    for session_id, session in active_sessions.items():
-        if session["user_id"] == user_id and session["status"] in ("starting", "running"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="You already have an active live monitoring session running. Please stop it first before starting a new one."
-            )
+    supabase = get_supabase_client()
+    active_resp = (
+        supabase.table("live_sessions")
+        .select("id")
+        .eq("user_id", str(user_id))
+        .in_("status", ["starting", "running"])
+        .execute()
+    )
+    if active_resp.data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You already have an active live monitoring session running. Please stop it first before starting a new one."
+        )
 
     try:
-        session_id = await start_live_verification_session(payload.youtube_url, user_id)
+        session_id = await start_live_verification_session(
+            youtube_url=payload.youtube_url,
+            contract_id=str(payload.contract_id),
+            user_id=str(user_id)
+        )
         return {"session_id": session_id}
     except RuntimeError as exc:
         logger.error("Failed to start live verification: %s", exc)
@@ -178,11 +193,21 @@ async def start_live_verification(
 
 @router.get("/live/{session_id}/status", response_model=LiveVerificationStatusResponse)
 def get_live_status(
-    session_id: str,
+    session_id: UUID,
     current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, Any]:
+    supabase = get_supabase_client()
+    # 1. Fetch session from DB to check contract
+    session_resp = supabase.table("live_sessions").select("*").eq("id", str(session_id)).execute()
+    if not session_resp.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Live session not found.")
+    session = session_resp.data[0]
+
+    # 2. Verify organization ownership
+    get_contract_for_profile(session["contract_id"], current_profile)
+
     try:
-        return get_live_verification_session_status(session_id)
+        return get_live_verification_session_status(str(session_id))
     except KeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -197,11 +222,21 @@ def get_live_status(
 
 @router.post("/live/{session_id}/stop")
 async def stop_live_verification(
-    session_id: str,
+    session_id: UUID,
     current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, str]:
+    supabase = get_supabase_client()
+    # 1. Fetch session from DB to check contract
+    session_resp = supabase.table("live_sessions").select("*").eq("id", str(session_id)).execute()
+    if not session_resp.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Live session not found.")
+    session = session_resp.data[0]
+
+    # 2. Verify organization ownership
+    get_contract_for_profile(session["contract_id"], current_profile)
+
     try:
-        await stop_live_verification_session(session_id)
+        await stop_live_verification_session(str(session_id))
         return {"status": "stopped"}
     except KeyError as exc:
         raise HTTPException(

@@ -3,6 +3,7 @@ import binascii
 from tenacity import retry, wait_fixed, stop_after_attempt
 
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, UniqueConstraint, Index
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy_utils import database_exists
 from sqlalchemy.orm import sessionmaker
@@ -20,8 +21,10 @@ class Song(Base):
     name = Column(String(length=255), nullable=False)
     fingerprinted = Column(Boolean, default=False)
     file_sha1 = Column(String(length=40), nullable=False)
+    organization_id = Column(PG_UUID(as_uuid=False), nullable=True)
 
     ix_sha1 = Index('ix_dejavu_songs_sha', file_sha1)
+    ix_org_sha1 = Index('ix_dejavu_songs_org_sha', organization_id, file_sha1)
 
 
 class Fingerprint(Base):
@@ -63,26 +66,32 @@ class Database(object):
 
     # def get_songs(self): - don't cache all of this!
 
-    def get_song_by_hash(self, song_hash):
+    def get_song_by_hash(self, song_hash, organization_id=None):
         """
         Return a song by its hash
 
         :param song_hash: Song hash
         """
-        song = self.session.query(Song).filter(Song.file_sha1 == binascii.b2a_base64(binascii.unhexlify(song_hash))).one_or_none()
+        query = self.session.query(Song).filter(Song.file_sha1 == binascii.b2a_base64(binascii.unhexlify(song_hash)))
+        if organization_id is not None:
+            query = query.filter(Song.organization_id == organization_id)
+        song = query.one_or_none()
         if song is None: 
             return None
         return song.id
 
-    def get_song_by_id(self, sid):
+    def get_song_by_id(self, sid, organization_id=None):
         """
         Return a song by its identifier
 
         :param sid: Song identifier
         """
-        return self.session.query(Song).filter(Song.id == sid).one_or_none()
+        query = self.session.query(Song).filter(Song.id == sid)
+        if organization_id is not None:
+            query = query.filter(Song.organization_id == organization_id)
+        return query.one_or_none()
 
-    def insert_song(self, song_name, file_hash):
+    def insert_song(self, song_name, file_hash, organization_id=None):
         """
         Inserts a song name into the database, returns the new
         identifier of the song.
@@ -90,7 +99,11 @@ class Database(object):
         :param song_name: name of the song
         :param file_hash: sha1 hex digest of the filename
         """
-        song = Song(name=song_name, file_sha1=binascii.b2a_base64(binascii.unhexlify(file_hash)))
+        song = Song(
+            name=song_name,
+            file_sha1=binascii.b2a_base64(binascii.unhexlify(file_hash)),
+            organization_id=organization_id,
+        )
         self.session.add(song)
         self.session.commit()
         return song.id
@@ -116,7 +129,7 @@ class Database(object):
 
         self.session.bulk_save_objects(fingerprints)
 
-    def return_matches(self, hashes):
+    def return_matches(self, hashes, organization_id=None):
         """
         Searches the database for pairs of (hash, offset) values.
 
@@ -139,9 +152,10 @@ class Database(object):
         for i in range(0, len(values), 500):
             k = i + 500
             tmp = values[i:k]
-            for fingerprint in self.session.query(Fingerprint).filter(
-                    Fingerprint.hash.in_(tmp)
-                    ):
+            query = self.session.query(Fingerprint).filter(Fingerprint.hash.in_(tmp))
+            if organization_id is not None:
+                query = query.join(Song).filter(Song.organization_id == organization_id)
+            for fingerprint in query:
                 yield (fingerprint.song_id, fingerprint.offset - mapper[fingerprint.hash])
 
     @retry(wait=wait_fixed(1),stop=stop_after_attempt(10))
