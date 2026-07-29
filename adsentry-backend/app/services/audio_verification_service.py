@@ -24,7 +24,15 @@ def _get_dejavu() -> Dejavu:
     for why they're namespaced) and creates them automatically on first
     connect, so fingerprints persist in Postgres across backend restarts.
     """
-    return Dejavu(dburl=settings.dejavu_database_url)
+    if not settings.dejavu_database_url or not settings.dejavu_database_url.strip():
+        raise RuntimeError("Dejavu database connection failed: DEJAVU_DATABASE_URL environment variable is empty.")
+    try:
+        return Dejavu(dburl=settings.dejavu_database_url)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Dejavu database connection failed: Could not connect to the database. "
+            f"Please verify your DEJAVU_DATABASE_URL environment variable and database status. Details: {exc}"
+        ) from exc
 
 
 def fingerprint_recording(file_path: str, title: str) -> None:
@@ -43,6 +51,13 @@ def download_youtube_audio(youtube_url: str, output_path: str) -> str:
     Downloads just the audio track of a YouTube video to `{output_path}.wav`
     via yt-dlp + ffmpeg, returning the final file path.
     """
+    import shutil
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError(
+            "Download failed: ffmpeg is missing. The system requires ffmpeg to extract "
+            "and convert audio from YouTube videos. Please make sure ffmpeg is installed and on PATH."
+        )
+
     import yt_dlp
 
     ydl_opts = {
@@ -75,8 +90,19 @@ def download_youtube_audio(youtube_url: str, output_path: str) -> str:
 
 
 def get_audio_duration_seconds(file_path: str) -> float:
-    audio = AudioSegment.from_file(file_path)
-    return round(len(audio) / 1000.0, 2)
+    try:
+        audio = AudioSegment.from_file(file_path)
+        return round(len(audio) / 1000.0, 2)
+    except Exception as exc:
+        import shutil
+        if not shutil.which("ffmpeg"):
+            raise RuntimeError(
+                "Could not read audio file to determine duration: ffmpeg is missing from PATH. "
+                "Please ensure ffmpeg is installed."
+            ) from exc
+        raise RuntimeError(
+            f"Failed to read audio file: {exc}"
+        ) from exc
 
 
 def has_fingerprinted_sources() -> bool:
@@ -89,6 +115,9 @@ def has_fingerprinted_sources() -> bool:
         )
         return count > 0
     except Exception as exc:
+        exc_str = str(exc)
+        if "database connection failed" in exc_str or "ffmpeg is missing" in exc_str:
+            raise exc
         logger.error("Could not check for fingerprinted sources: %s", exc)
         return False
 
@@ -119,10 +148,17 @@ def recognize_clip(clip_file_path: str) -> dict[str, Any] | None:
     Returns {matched_title, offset_seconds, confidence} on a match, or None
     if there's no match or Dejavu errors for any reason.
     """
+    import shutil
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("ffmpeg is missing. The system requires ffmpeg to recognize audio clips.")
+
     try:
         djv = _get_dejavu()
         match = djv.recognize(FileRecognizer, clip_file_path)
     except Exception as exc:
+        exc_str = str(exc)
+        if "database connection failed" in exc_str or "ffmpeg is missing" in exc_str:
+            raise exc
         logger.error("Dejavu recognition failed for '%s': %s", clip_file_path, exc)
         return None
 

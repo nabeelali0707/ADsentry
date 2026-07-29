@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { api } from '@/lib/api';
 import Button from '@/components/ui/Button';
@@ -18,6 +18,11 @@ import {
   Info,
   Clock,
   Gauge,
+  Radio,
+  Tv,
+  Activity,
+  Play,
+  Square,
 } from 'lucide-react';
 
 export default function AudioVerificationPage() {
@@ -83,6 +88,113 @@ export default function AudioVerificationPage() {
     } finally {
       setVerifying(false);
     }
+  };
+
+  // Live Monitor section state
+  const [liveUrl, setLiveUrl] = useState('');
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [liveSessionId, setLiveSessionId] = useState<string | null>(null);
+  const [liveStatus, setLiveStatus] = useState<string | null>(null);
+  const [liveMatches, setLiveMatches] = useState<any[]>([]);
+  const [liveError, setLiveError] = useState('');
+  const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
+  const [startingLive, setStartingLive] = useState(false);
+
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startLiveMonitor = async () => {
+    if (!liveUrl.trim()) return;
+    setStartingLive(true);
+    setLiveError('');
+    setLiveMatches([]);
+    setLiveElapsedSeconds(0);
+    setLiveStatus('starting');
+    
+    try {
+      const res = await api.startLiveVerification(liveUrl.trim());
+      setLiveSessionId(res.session_id);
+      setIsMonitoring(true);
+      
+      // Start elapsed timer
+      timerRef.current = setInterval(() => {
+        setLiveElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+
+      // Start polling status
+      pollStatus(res.session_id);
+      pollingRef.current = setInterval(() => {
+        pollStatus(res.session_id);
+      }, 5000);
+
+    } catch (err: any) {
+      setLiveError(err.message || 'Failed to start live verification stream.');
+      setLiveStatus('error');
+      setIsMonitoring(false);
+    } finally {
+      setStartingLive(false);
+    }
+  };
+
+  const pollStatus = async (sessionId: string) => {
+    try {
+      const res = await api.getLiveVerificationStatus(sessionId);
+      setLiveStatus(res.status);
+      if (res.matches) {
+        const sorted = [...res.matches].sort(
+          (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+        setLiveMatches(sorted);
+      }
+      
+      if (res.status === 'error' || res.status === 'stopped') {
+        stopLiveMonitorLocally();
+        if (res.status === 'error' && res.error_message) {
+          setLiveError(res.error_message);
+        }
+      }
+    } catch (err: any) {
+      setLiveError(err.message || 'Failed to retrieve live stream status.');
+      stopLiveMonitorLocally();
+    }
+  };
+
+  const stopLiveMonitorLocally = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    setIsMonitoring(false);
+  };
+
+  const handleStopLiveMonitor = async () => {
+    if (!liveSessionId) return;
+    try {
+      await api.stopLiveVerification(liveSessionId);
+    } catch (err: any) {
+      console.error('Failed to stop session on backend:', err);
+    } finally {
+      stopLiveMonitorLocally();
+      setLiveStatus('stopped');
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const formatElapsed = (totalSecs: number) => {
+    const hrs = Math.floor(totalSecs / 3600);
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    return `${hrs > 0 ? hrs + ':' : ''}${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
@@ -246,6 +358,117 @@ export default function AudioVerificationPage() {
             'Verify'
           )}
         </Button>
+      </Card>
+
+      {/* Section C: Live Stream Verification */}
+      <Card className="p-6 space-y-5">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between w-full">
+            <span className="flex items-center gap-2.5">
+              <Radio className={`h-5 w-5 ${isMonitoring && liveStatus === 'running' ? 'text-rose-500 animate-pulse' : 'text-teal-accent'}`} />
+              Live YouTube Monitor
+            </span>
+            {isMonitoring && liveStatus === 'running' && (
+              <span className="flex items-center gap-1.5 bg-rose-500/10 text-rose-400 text-xs font-semibold px-2.5 py-1 rounded-full border border-rose-500/20">
+                <span className="h-2 w-2 rounded-full bg-rose-500 animate-ping" />
+                MONITORING LIVE
+              </span>
+            )}
+          </CardTitle>
+        </CardHeader>
+
+        <div className="space-y-4">
+          <p className="text-xs text-slate-400 flex items-start gap-2">
+            <Info className="h-4 w-4 shrink-0 mt-0.5 text-slate-500" />
+            Ingest a YouTube Live URL to start a background monitor capture segmenting the stream and matching it against your database in real-time.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="text"
+              value={liveUrl}
+              onChange={(e) => setLiveUrl(e.target.value)}
+              disabled={isMonitoring}
+              placeholder="https://www.youtube.com/watch?v=... (YouTube Live URL)"
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white px-3 py-2.5 focus:outline-none focus:border-teal-accent/50 disabled:opacity-60"
+            />
+            {isMonitoring ? (
+              <Button
+                variant="danger"
+                onClick={handleStopLiveMonitor}
+                className="bg-rose-600 hover:bg-rose-700 text-white shrink-0"
+              >
+                <Square className="h-4 w-4 mr-1.5 shrink-0" />
+                Stop Monitor
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={startLiveMonitor}
+                disabled={!liveUrl.trim()}
+                loading={startingLive}
+                className="shrink-0"
+              >
+                <Play className="h-4 w-4 mr-1.5 shrink-0" />
+                Start Monitor
+              </Button>
+            )}
+          </div>
+
+          <ErrorBanner>{liveError}</ErrorBanner>
+
+          {isMonitoring && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 rounded-xl border border-slate-800 bg-slate-900/30">
+              <div className="space-y-0.5">
+                <span className="text-xxs font-bold text-slate-500 uppercase tracking-wider">Session Status</span>
+                <p className="text-sm font-semibold capitalize text-white flex items-center gap-1.5">
+                  <Activity className="h-4 w-4 text-teal-accent animate-pulse" />
+                  {liveStatus}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-xxs font-bold text-slate-500 uppercase tracking-wider">Elapsed Time</span>
+                <p className="text-sm font-semibold text-white">{formatElapsed(liveElapsedSeconds)}</p>
+              </div>
+              <div className="col-span-2 sm:col-span-1 space-y-0.5">
+                <span className="text-xxs font-bold text-slate-500 uppercase tracking-wider">Matches Logged</span>
+                <p className="text-sm font-semibold text-white">{liveMatches.length}</p>
+              </div>
+            </div>
+          )}
+
+          {isMonitoring && liveMatches.length > 0 && (
+            <div className="space-y-2.5">
+              <h3 className="text-xs font-semibold text-slate-400">Match Events Log (Real-time)</h3>
+              <div className="max-h-60 overflow-y-auto border border-slate-800/80 rounded-xl divide-y divide-slate-800 bg-slate-950/40">
+                {liveMatches.map((match, idx) => (
+                  <div key={idx} className="p-3 flex items-start justify-between gap-4 hover:bg-slate-900/10 transition-colors">
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-white leading-none">
+                        {match.title}
+                      </p>
+                      <p className="text-xxs text-slate-400 flex items-center gap-1">
+                        <Clock className="h-3 w-3 text-slate-500" />
+                        Match offset: {Math.round(match.offset_seconds)}s • Logged at {new Date(match.timestamp).toLocaleTimeString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 text-emerald-400 bg-emerald-500/5 px-2 py-0.5 rounded-full border border-emerald-500/10 text-xxs font-semibold">
+                      <Gauge className="h-3 w-3" />
+                      {match.confidence.toFixed(1)}% Conf
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isMonitoring && liveStatus === 'running' && liveMatches.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-6 text-center border border-slate-800/60 rounded-xl bg-slate-950/20">
+              <span className="h-2 w-2 rounded-full bg-teal-accent animate-ping mb-2" />
+              <p className="text-xs text-slate-400">Listening to live stream... Waiting for matched segments.</p>
+            </div>
+          )}
+        </div>
       </Card>
     </div>
   );

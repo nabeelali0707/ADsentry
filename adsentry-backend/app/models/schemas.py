@@ -112,3 +112,29 @@ class VerifyClipResponse(BaseModel):
     timestamp_formatted: str | None = None
     confidence: float | None = None
     reason: str | None = None
+
+
+# ─── Live Audio Verification ───
+
+class LiveVerificationStartRequest(BaseModel):
+    youtube_url: str
+
+
+class LiveVerificationStartResponse(BaseModel):
+    session_id: str
+
+
+class LiveVerificationMatch(BaseModel):
+    title: str
+    offset_seconds: float
+    confidence: float
+    timestamp: datetime
+
+
+class LiveVerificationStatusResponse(BaseModel):
+    session_id: str
+    youtube_url: str
+    status: str
+    started_at: datetime
+    matches: list[LiveVerificationMatch]
+    error_message: str | None = None

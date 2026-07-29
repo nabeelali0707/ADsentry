@@ -10,6 +10,9 @@ from app.models.schemas import (
     FingerprintSourceRequest,
     FingerprintSourceResponse,
     VerifyClipResponse,
+    LiveVerificationStartRequest,
+    LiveVerificationStartResponse,
+    LiveVerificationStatusResponse,
 )
 from app.services.audio_verification_service import (
     download_youtube_audio,
@@ -17,6 +20,12 @@ from app.services.audio_verification_service import (
     get_audio_duration_seconds,
     has_fingerprinted_sources,
     recognize_clip,
+)
+from app.services.live_monitor_service import (
+    active_sessions,
+    start_live_verification_session,
+    stop_live_verification_session,
+    get_live_verification_session_status,
 )
 
 
@@ -45,7 +54,14 @@ def fingerprint_source(
                 detail=f"Could not download audio from that YouTube URL: {exc}",
             ) from exc
 
-        duration_seconds = get_audio_duration_seconds(downloaded_path)
+        try:
+            duration_seconds = get_audio_duration_seconds(downloaded_path)
+        except Exception as exc:
+            logger.error("Failed to determine audio duration: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Could not determine audio duration: {exc}",
+            ) from exc
 
         try:
             fingerprint_recording(downloaded_path, payload.title)
@@ -53,7 +69,7 @@ def fingerprint_source(
             logger.error("Fingerprinting failed for '%s': %s", payload.title, exc)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Fingerprinting the downloaded audio failed.",
+                detail=f"Fingerprinting the downloaded audio failed: {exc}",
             ) from exc
 
     return {
@@ -74,15 +90,22 @@ async def verify_clip(
     file: UploadFile = File(...),
     current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, Any]:
-    if not has_fingerprinted_sources():
-        return {
-            "found": False,
-            "matched_title": None,
-            "timestamp_seconds": None,
-            "timestamp_formatted": None,
-            "confidence": None,
-            "reason": "no_sources_fingerprinted",
-        }
+    try:
+        if not has_fingerprinted_sources():
+            return {
+                "found": False,
+                "matched_title": None,
+                "timestamp_seconds": None,
+                "timestamp_formatted": None,
+                "confidence": None,
+                "reason": "no_sources_fingerprinted",
+            }
+    except Exception as exc:
+        logger.error("Database connection failure in verify_clip: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database check failed: {exc}",
+        ) from exc
 
     file_bytes = await file.read()
     suffix = Path(file.filename or "clip.wav").suffix or ".wav"
@@ -93,6 +116,12 @@ async def verify_clip(
 
     try:
         match = recognize_clip(tmp_path)
+    except Exception as exc:
+        logger.error("Audio clip recognition failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Audio recognition failed: {exc}",
+        ) from exc
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -114,3 +143,73 @@ async def verify_clip(
         "timestamp_formatted": _format_timestamp(offset_seconds),
         "confidence": match["confidence"],
     }
+
+
+@router.post("/live/start", response_model=LiveVerificationStartResponse)
+async def start_live_verification(
+    payload: LiveVerificationStartRequest,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> dict[str, Any]:
+    # 1. Enforce one active live session per user at a time
+    user_id = current_profile["id"]
+    for session_id, session in active_sessions.items():
+        if session["user_id"] == user_id and session["status"] in ("starting", "running"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You already have an active live monitoring session running. Please stop it first before starting a new one."
+            )
+
+    try:
+        session_id = await start_live_verification_session(payload.youtube_url, user_id)
+        return {"session_id": session_id}
+    except RuntimeError as exc:
+        logger.error("Failed to start live verification: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc)
+        ) from exc
+    except Exception as exc:
+        logger.exception("Unexpected error starting live verification")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An unexpected error occurred: {exc}"
+        ) from exc
+
+
+@router.get("/live/{session_id}/status", response_model=LiveVerificationStatusResponse)
+def get_live_status(
+    session_id: str,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> dict[str, Any]:
+    try:
+        return get_live_verification_session_status(session_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc)
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch session status: {exc}"
+        )
+
+
+@router.post("/live/{session_id}/stop")
+async def stop_live_verification(
+    session_id: str,
+    current_profile: dict[str, Any] = Depends(get_current_profile),
+) -> dict[str, str]:
+    try:
+        await stop_live_verification_session(session_id)
+        return {"status": "stopped"}
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc)
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to stop session: {exc}"
+        )

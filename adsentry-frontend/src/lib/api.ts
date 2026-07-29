@@ -89,6 +89,22 @@ export interface AuditCorrection {
   created_at: string;
 }
 
+export interface LiveVerificationMatch {
+  title: string;
+  offset_seconds: number;
+  confidence: number;
+  timestamp: string; // ISO datetime
+}
+
+export interface LiveVerificationStatusResponse {
+  session_id: string;
+  youtube_url: string;
+  status: 'starting' | 'running' | 'stopped' | 'error';
+  started_at: string; // ISO datetime
+  matches: LiveVerificationMatch[];
+  error_message?: string | null;
+}
+
 // Helper to format currency in PKR format: Rs. 12,456,780
 export const formatPKR = (amount: number): string => {
   return 'Rs. ' + Math.round(amount).toLocaleString('en-US');
@@ -593,6 +609,46 @@ export const api = {
     if (!response.ok) {
       const err = await response.json().catch(() => null);
       throw new Error(err?.detail || 'Failed to verify audio clip.');
+    }
+    return response.json();
+  },
+
+  // POST /audio-verification/live/start
+  startLiveVerification: async (youtubeUrl: string): Promise<{ session_id: string }> => {
+    const response = await fetch(`${API_BASE_URL}/audio-verification/live/start`, {
+      method: 'POST',
+      headers: await getHeaders(),
+      body: JSON.stringify({ youtube_url: youtubeUrl }),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => null);
+      throw new Error(err?.detail || 'Failed to start live verification.');
+    }
+    return response.json();
+  },
+
+  // GET /audio-verification/live/{session_id}/status
+  getLiveVerificationStatus: async (sessionId: string): Promise<LiveVerificationStatusResponse> => {
+    const response = await fetch(`${API_BASE_URL}/audio-verification/live/${sessionId}/status`, {
+      method: 'GET',
+      headers: await getHeaders(),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => null);
+      throw new Error(err?.detail || 'Failed to get live verification status.');
+    }
+    return response.json();
+  },
+
+  // POST /audio-verification/live/{session_id}/stop
+  stopLiveVerification: async (sessionId: string): Promise<{ status: string }> => {
+    const response = await fetch(`${API_BASE_URL}/audio-verification/live/${sessionId}/stop`, {
+      method: 'POST',
+      headers: await getHeaders(),
+    });
+    if (!response.ok) {
+      const err = await response.json().catch(() => null);
+      throw new Error(err?.detail || 'Failed to stop live verification.');
     }
     return response.json();
   },
