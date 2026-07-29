@@ -264,6 +264,15 @@ async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str)
     retry_count = 0
     backoffs = [5, 15, 45]
 
+    # Fetch contract organization_id for organization scoping
+    organization_id = None
+    try:
+        contract_resp = supabase.table("contracts").select("organization_id").eq("id", contract_id).single().execute()
+        if contract_resp.data:
+            organization_id = str(contract_resp.data["organization_id"])
+    except Exception as e:
+        logger.error(f"Failed to fetch organization_id for contract {contract_id}: {e}")
+
     try:
         while True:
             # 1. Fetch current status from DB
@@ -330,8 +339,8 @@ async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str)
                         file_path = os.path.join(temp_dir, f)
                         processed_files.add(f)
                         try:
-                            # Run Dejavu check in a thread
-                            match = await asyncio.to_thread(recognize_clip, file_path)
+                            # Run Dejavu check in a thread with organization scoping
+                            match = await asyncio.to_thread(recognize_clip, file_path, organization_id)
                             if match:
                                 await handle_match_found(
                                     session_id=session_id,
@@ -371,7 +380,7 @@ async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str)
             for f in files:
                 file_path = os.path.join(temp_dir, f)
                 try:
-                    match = await asyncio.to_thread(recognize_clip, file_path)
+                    match = await asyncio.to_thread(recognize_clip, file_path, organization_id)
                     if match:
                         await handle_match_found(
                             session_id=session_id,

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Request
 
 from app.core.auth import get_current_profile, get_contract_for_profile
 from app.core.supabase_client import get_supabase_client
@@ -42,8 +42,14 @@ router = APIRouter(
 @router.post("/fingerprint-source", response_model=FingerprintSourceResponse)
 def fingerprint_source(
     payload: FingerprintSourceRequest,
+    request: Request,
     current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, Any]:
+    if not getattr(request.app.state, "audio_verification_enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audio verification is not configured on this server.",
+        )
     with tempfile.TemporaryDirectory() as tmp_dir:
         output_path = str(Path(tmp_dir) / "source_audio")
         try:
@@ -65,7 +71,7 @@ def fingerprint_source(
             ) from exc
 
         try:
-            fingerprint_recording(downloaded_path, payload.title)
+            fingerprint_recording(downloaded_path, payload.title, str(current_profile["organization_id"]))
         except Exception as exc:
             logger.error("Fingerprinting failed for '%s': %s", payload.title, exc)
             raise HTTPException(
@@ -88,11 +94,17 @@ def _format_timestamp(seconds: float) -> str:
 
 @router.post("/verify-clip", response_model=VerifyClipResponse)
 async def verify_clip(
+    request: Request,
     file: UploadFile = File(...),
     current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, Any]:
+    if not getattr(request.app.state, "audio_verification_enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audio verification is not configured on this server.",
+        )
     try:
-        if not has_fingerprinted_sources():
+        if not has_fingerprinted_sources(str(current_profile["organization_id"])):
             return {
                 "found": False,
                 "matched_title": None,
@@ -116,7 +128,7 @@ async def verify_clip(
         tmp_path = tmp_file.name
 
     try:
-        match = recognize_clip(tmp_path)
+        match = recognize_clip(tmp_path, str(current_profile["organization_id"]))
     except Exception as exc:
         logger.error("Audio clip recognition failed: %s", exc)
         raise HTTPException(
@@ -149,8 +161,14 @@ async def verify_clip(
 @router.post("/live/start", response_model=LiveVerificationStartResponse)
 async def start_live_verification(
     payload: LiveVerificationStartRequest,
+    request: Request,
     current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, Any]:
+    if not getattr(request.app.state, "audio_verification_enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audio verification is not configured on this server.",
+        )
     # 1. Verify that user belongs to the contract's organization
     get_contract_for_profile(payload.contract_id, current_profile)
 
@@ -194,8 +212,14 @@ async def start_live_verification(
 @router.get("/live/{session_id}/status", response_model=LiveVerificationStatusResponse)
 def get_live_status(
     session_id: UUID,
+    request: Request,
     current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, Any]:
+    if not getattr(request.app.state, "audio_verification_enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audio verification is not configured on this server.",
+        )
     supabase = get_supabase_client()
     # 1. Fetch session from DB to check contract
     session_resp = supabase.table("live_sessions").select("*").eq("id", str(session_id)).execute()
@@ -203,7 +227,14 @@ def get_live_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Live session not found.")
     session = session_resp.data[0]
 
-    # 2. Verify organization ownership
+    # 2. Verify session ownership
+    if not session.get("user_id") or str(session["user_id"]) != str(current_profile["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this live session.",
+        )
+
+    # 3. Verify organization ownership
     get_contract_for_profile(session["contract_id"], current_profile)
 
     try:
@@ -223,8 +254,14 @@ def get_live_status(
 @router.post("/live/{session_id}/stop")
 async def stop_live_verification(
     session_id: UUID,
+    request: Request,
     current_profile: dict[str, Any] = Depends(get_current_profile),
 ) -> dict[str, str]:
+    if not getattr(request.app.state, "audio_verification_enabled", True):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Audio verification is not configured on this server.",
+        )
     supabase = get_supabase_client()
     # 1. Fetch session from DB to check contract
     session_resp = supabase.table("live_sessions").select("*").eq("id", str(session_id)).execute()
@@ -232,7 +269,14 @@ async def stop_live_verification(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Live session not found.")
     session = session_resp.data[0]
 
-    # 2. Verify organization ownership
+    # 2. Verify session ownership
+    if not session.get("user_id") or str(session["user_id"]) != str(current_profile["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to stop this live session.",
+        )
+
+    # 3. Verify organization ownership
     get_contract_for_profile(session["contract_id"], current_profile)
 
     try:

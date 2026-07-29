@@ -45,7 +45,8 @@ def main():
         '0001_init_schema.sql',
         '0002_rls_policies.sql',
         '0003_add_expected_air_time.sql',
-        '0004_live_verification.sql'
+        '0004_live_verification.sql',
+        '0004_dejavu_org_scope.sql'
     ]
 
     for filename in migration_files:

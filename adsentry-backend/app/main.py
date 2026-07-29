@@ -85,9 +85,12 @@ async def on_startup() -> None:
     present before the server starts accepting requests. Logs confirmation
     WITHOUT revealing key values.
     """
+    app.state.audio_verification_enabled = True
+
     # 1. Verify ffmpeg is on PATH. Audio verification degrades if missing.
     import shutil
     if not shutil.which("ffmpeg"):
+        app.state.audio_verification_enabled = False
         logger.warning(
             "Audio verification disabled: ffmpeg executable was not found on PATH. "
             "The ADsentry backend depends on ffmpeg for both the standard and live "
@@ -98,6 +101,7 @@ async def on_startup() -> None:
 
     # 2. Verify DEJAVU_DATABASE_URL is set. Audio fingerprinting degrades if empty.
     if not settings.dejavu_database_url or not settings.dejavu_database_url.strip():
+        app.state.audio_verification_enabled = False
         logger.warning(
             "Audio verification disabled: DEJAVU_DATABASE_URL is not set or is empty. "
             "This environment variable must be set to a valid PostgreSQL connection string "
