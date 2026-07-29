@@ -72,7 +72,7 @@ class Database(object):
 
         :param song_hash: Song hash
         """
-        query = self.session.query(Song).filter(Song.file_sha1 == binascii.b2a_base64(binascii.unhexlify(song_hash)))
+        query = self.session.query(Song).filter(Song.file_sha1 == binascii.b2a_base64(binascii.unhexlify(song_hash)).decode("ascii"))
         if organization_id is not None:
             query = query.filter(Song.organization_id == organization_id)
         song = query.one_or_none()
@@ -101,7 +101,7 @@ class Database(object):
         """
         song = Song(
             name=song_name,
-            file_sha1=binascii.b2a_base64(binascii.unhexlify(file_hash)),
+            file_sha1=binascii.b2a_base64(binascii.unhexlify(file_hash)).decode("ascii"),
             organization_id=organization_id,
         )
         self.session.add(song)
@@ -121,7 +121,7 @@ class Database(object):
         for hash, offset in set(hashes):
             fingerprints.append(
                 Fingerprint(
-                    hash=binascii.b2a_base64(binascii.unhexlify(hash)),
+                    hash=binascii.b2a_base64(binascii.unhexlify(hash)).decode("ascii"),
                     song_id=sid,
                     offset=int(offset)
                 )
@@ -144,7 +144,7 @@ class Database(object):
         # Create a dictionary of hash => offset pairs for later lookups
         mapper = {}
         for hash, offset in hashes:
-            mapper[binascii.b2a_base64(binascii.unhexlify(hash)) ] = offset
+            mapper[binascii.b2a_base64(binascii.unhexlify(hash)).decode("ascii")] = offset
 
         # Get an iterable of all the hashes we need
         values = [h for h in mapper.keys()]
