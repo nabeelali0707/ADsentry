@@ -228,7 +228,7 @@ def get_live_status(
     session = session_resp.data[0]
 
     # 2. Verify session ownership
-    if not session.get("user_id") or str(session["user_id"]) != str(current_profile["id"]):
+    if session.get("user_id") and str(session["user_id"]) != str(current_profile["id"]):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access this live session.",
@@ -270,7 +270,7 @@ async def stop_live_verification(
     session = session_resp.data[0]
 
     # 2. Verify session ownership
-    if not session.get("user_id") or str(session["user_id"]) != str(current_profile["id"]):
+    if session.get("user_id") and str(session["user_id"]) != str(current_profile["id"]):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to stop this live session.",

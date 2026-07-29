@@ -31,7 +31,7 @@ def get_supabase_client() -> Client:
             def __init__(self, name: str):
                 self.name = name
                 self._data = []
-                self._filters = []  # list of (column, value)
+                self._filters = []  # list of dict filters
                 self._single = False
 
             def insert(self, payload):
@@ -52,8 +52,29 @@ def get_supabase_client() -> Client:
                 return self
 
             def eq(self, column, value):
-                self._filters.append((column, value))
+                self._filters.append({"op": "eq", "col": column, "val": value})
                 return self
+
+            def in_(self, column, values):
+                self._filters.append({"op": "in", "col": column, "val": values})
+                return self
+
+            def gte(self, column, value):
+                self._filters.append({"op": "gte", "col": column, "val": value})
+                return self
+
+            def lte(self, column, value):
+                self._filters.append({"op": "lte", "col": column, "val": value})
+                return self
+
+            @property
+            def not_(self):
+                parent = self
+                class _NotWrapper:
+                    def is_(self, column, value):
+                        parent._filters.append({"op": "not_is", "col": column, "val": value})
+                        return parent
+                return _NotWrapper()
 
             def limit(self, n):
                 self._limit = n
@@ -75,9 +96,46 @@ def get_supabase_client() -> Client:
                 return self
 
             def execute(self):
-                # Apply equality filters
+                # Apply filters
                 if self._filters:
-                    filtered = [row for row in self._data if isinstance(row, dict) and all(str(row.get(col)) == str(val) for col, val in self._filters)]
+                    filtered = []
+                    for row in self._data:
+                        if not isinstance(row, dict):
+                            continue
+                        match = True
+                        for f in self._filters:
+                            op = f["op"]
+                            col = f["col"]
+                            val = f["val"]
+                            row_val = row.get(col)
+
+                            if op == "eq":
+                                if str(row_val) != str(val):
+                                    match = False
+                                    break
+                            elif op == "in":
+                                if row_val not in val and str(row_val) not in [str(x) for x in val]:
+                                    match = False
+                                    break
+                            elif op == "gte":
+                                if row_val is None or str(row_val) < str(val):
+                                    match = False
+                                    break
+                            elif op == "lte":
+                                if row_val is None or str(row_val) > str(val):
+                                    match = False
+                                    break
+                            elif op == "not_is":
+                                if val == "null" or val is None:
+                                    if row_val is None or row_val == "null":
+                                        match = False
+                                        break
+                                else:
+                                    if str(row_val) == str(val):
+                                        match = False
+                                        break
+                        if match:
+                            filtered.append(row)
                 else:
                     filtered = self._data
                 # Apply limit if set
