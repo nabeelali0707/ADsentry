@@ -34,6 +34,7 @@ def resolve_live_stream_url(youtube_url: str) -> str:
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:

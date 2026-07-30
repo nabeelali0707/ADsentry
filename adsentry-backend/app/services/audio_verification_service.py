@@ -73,6 +73,7 @@ def download_youtube_audio(youtube_url: str, output_path: str) -> str:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
 
     try:
