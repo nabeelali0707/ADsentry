@@ -11,6 +11,21 @@ from sqlalchemy.orm import sessionmaker
 Base = declarative_base()
 
 
+def _b64(hex_digest):
+    """
+    Base64-encode a hex digest for storage/lookup.
+
+    newline=False matters: binascii.b2a_base64 appends a trailing "\\n" by
+    default, which pushed each 16-character encoded hash to 17 and overflowed
+    dejavu_fingerprints.hash (varchar(16)) — every fingerprint insert failed
+    with StringDataRightTruncation, so no audio could ever be indexed.
+
+    Both the insert and lookup paths must use this same helper, or the encoded
+    values won't compare equal and matching silently returns nothing.
+    """
+    return binascii.b2a_base64(binascii.unhexlify(hex_digest), newline=False).decode("ascii")
+
+
 # Table names are prefixed with dejavu_ (and index names namespaced to match)
 # so this self-managed schema can never collide with AdSentry's own tables
 # (contracts/broadcast_logs/discrepancies/etc.) in the same Postgres database.
@@ -72,7 +87,7 @@ class Database(object):
 
         :param song_hash: Song hash
         """
-        query = self.session.query(Song).filter(Song.file_sha1 == binascii.b2a_base64(binascii.unhexlify(song_hash)).decode("ascii"))
+        query = self.session.query(Song).filter(Song.file_sha1 == _b64(song_hash))
         if organization_id is not None:
             query = query.filter(Song.organization_id == organization_id)
         song = query.one_or_none()
@@ -101,7 +116,7 @@ class Database(object):
         """
         song = Song(
             name=song_name,
-            file_sha1=binascii.b2a_base64(binascii.unhexlify(file_hash)).decode("ascii"),
+            file_sha1=_b64(file_hash),
             organization_id=organization_id,
         )
         self.session.add(song)
@@ -121,7 +136,7 @@ class Database(object):
         for hash, offset in set(hashes):
             fingerprints.append(
                 Fingerprint(
-                    hash=binascii.b2a_base64(binascii.unhexlify(hash)).decode("ascii"),
+                    hash=_b64(hash),
                     song_id=sid,
                     offset=int(offset)
                 )
@@ -144,7 +159,7 @@ class Database(object):
         # Create a dictionary of hash => offset pairs for later lookups
         mapper = {}
         for hash, offset in hashes:
-            mapper[binascii.b2a_base64(binascii.unhexlify(hash)).decode("ascii")] = offset
+            mapper[_b64(hash)] = offset
 
         # Get an iterable of all the hashes we need
         values = [h for h in mapper.keys()]

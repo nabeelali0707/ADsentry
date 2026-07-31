@@ -150,7 +150,7 @@ class Dejavu(object):
             Dejavu.CONFIDENCE: largest_count,
             Dejavu.OFFSET: int(largest),
             'offset_seconds': nseconds,
-            'file_sha1': binascii.hexlify(song.file_sha1).decode('utf-8'),
+            'file_sha1': binascii.hexlify(song.file_sha1.encode('utf-8')).decode('utf-8'),
         }
         return song
 

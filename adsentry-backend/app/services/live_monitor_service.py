@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import shutil
+import subprocess
 import tempfile
 from datetime import datetime, timedelta, time
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import pandas as pd
 import yt_dlp
 
+from app.core.config import settings
 from app.core.supabase_client import get_supabase_client
 from app.core.cache import cache_delete_prefix
 from app.services.audio_verification_service import recognize_clip, get_audio_duration_seconds
@@ -27,50 +29,78 @@ logger = logging.getLogger(__name__)
 active_processes: dict[str, dict[str, Any]] = {}
 
 
-def resolve_live_stream_url(youtube_url: str) -> str:
-    """
-    Validates if the YouTube URL is a live stream and extracts the HLS/m3u8 stream manifest URL.
-    """
-    ydl_opts = {
+def _ydl_opts(use_cookies: bool) -> dict[str, Any]:
+    opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        try:
-            info = ydl.extract_info(youtube_url, download=False)
-        except Exception as exc:
-            raise RuntimeError(f"Failed to fetch video information: {exc}") from exc
-
-        is_live = info.get("is_live") or info.get("live_status") == "is_live"
-        if not is_live:
-            raise RuntimeError("The provided YouTube URL is not currently a live broadcast.")
-
-        manifest_url = info.get("url")
-        if not manifest_url:
-            formats = info.get("formats", [])
-            for fmt in formats:
-                if fmt.get("protocol") == "m3u8_native" or "m3u8" in fmt.get("url", ""):
-                    manifest_url = fmt["url"]
-                    break
-
-        if not manifest_url and formats:
-            for fmt in formats:
-                if fmt.get("url"):
-                    manifest_url = fmt["url"]
-                    break
-
-        if not manifest_url:
-            raise RuntimeError("Could not extract a live HLS/manifest stream URL from this live video.")
-
-        return manifest_url
+    if use_cookies and settings.ytdlp_cookies_path is not None:
+        opts["cookiefile"] = settings.ytdlp_cookies_path
+    return opts
 
 
-async def run_auto_reconciliation(contract_id: str) -> None:
+def _extract_info_with_cookie_fallback(youtube_url: str) -> dict[str, Any]:
     """
-    Immediately runs reconciliation and recalculates the audit report.
-    Invalidates dashboard, financial impact, and summary caches.
+    Extracts video info, preferring a cookie-authenticated session (needed to
+    dodge YouTube's bot-detection on cloud IPs). Some authenticated sessions
+    are served SABR-only formats for live streams that yt-dlp can't parse yet
+    ("No video formats found") — that specific failure is unrelated to cookie
+    validity, so retry once without cookies rather than failing outright.
     """
+    use_cookies = settings.ytdlp_cookies_path is not None
+    try:
+        with yt_dlp.YoutubeDL(_ydl_opts(use_cookies=use_cookies)) as ydl:
+            return ydl.extract_info(youtube_url, download=False)
+    except Exception as exc:
+        if use_cookies and "No video formats found" in str(exc):
+            logger.warning("yt-dlp extraction failed with cookies (%s); retrying without cookies.", exc)
+            with yt_dlp.YoutubeDL(_ydl_opts(use_cookies=False)) as ydl:
+                return ydl.extract_info(youtube_url, download=False)
+        raise
+
+
+def resolve_live_stream_url(youtube_url: str) -> str:
+    """
+    Validates if the YouTube URL is a live stream and extracts the HLS/m3u8 stream manifest URL.
+    """
+    try:
+        info = _extract_info_with_cookie_fallback(youtube_url)
+    except Exception as exc:
+        exc_str = str(exc)
+        if "Sign in to confirm" in exc_str or "not a bot" in exc_str:
+            raise RuntimeError(
+                "Failed to fetch video information — YouTube is blocking this server's IP "
+                "and requires a signed-in session. Set YTDLP_COOKIES_CONTENT or "
+                "YTDLP_COOKIES_FILE in the environment (see .env.example)."
+            ) from exc
+        raise RuntimeError(f"Failed to fetch video information: {exc}") from exc
+
+    is_live = info.get("is_live") or info.get("live_status") == "is_live"
+    if not is_live:
+        raise RuntimeError("The provided YouTube URL is not currently a live broadcast.")
+
+    manifest_url = info.get("url")
+    if not manifest_url:
+        formats = info.get("formats", [])
+        for fmt in formats:
+            if fmt.get("protocol") == "m3u8_native" or "m3u8" in fmt.get("url", ""):
+                manifest_url = fmt["url"]
+                break
+
+    if not manifest_url and formats:
+        for fmt in formats:
+            if fmt.get("url"):
+                manifest_url = fmt["url"]
+                break
+
+    if not manifest_url:
+        raise RuntimeError("Could not extract a live HLS/manifest stream URL from this live video.")
+
+    return manifest_url
+
+
+def _run_auto_reconciliation_sync(contract_id: str) -> None:
     try:
         supabase = get_supabase_client()
         contract_resp = supabase.table("contracts").select("*").eq("id", contract_id).single().execute()
@@ -104,13 +134,34 @@ async def run_auto_reconciliation(contract_id: str) -> None:
         logger.exception(f"Failed to run auto-reconciliation for contract {contract_id}: {e}")
 
 
-async def handle_match_found(session_id: str, contract_id: str, matched_title: str, confidence: float, offset_seconds: float, file_path: str) -> None:
+async def run_auto_reconciliation(contract_id: str) -> None:
     """
-    Saves the live match to the database, uploads the evidence snippet,
-    inserts a broadcast log row, and runs auto-reconciliation.
+    Immediately runs reconciliation and recalculates the audit report.
+    Invalidates dashboard, financial impact, and summary caches.
+
+    The Supabase client and reconciliation/report work are all synchronous and
+    network-bound, so they run in a worker thread — calling them inline would
+    stall the event loop serving every other request (and on Windows corrupts
+    socket state outright, surfacing as WinError 10035).
+    """
+    await asyncio.to_thread(_run_auto_reconciliation_sync, contract_id)
+
+
+def _record_match_sync(
+    session_id: str,
+    contract_id: str,
+    matched_title: str,
+    confidence: float,
+    offset_seconds: float,
+    file_path: str,
+    matched_at: datetime,
+) -> bool:
+    """
+    Blocking half of handle_match_found: uploads evidence, records the match,
+    and inserts the broadcast log. Returns True if the contract was found and
+    reconciliation should follow.
     """
     supabase = get_supabase_client()
-    matched_at = datetime.now()
 
     # 1. Upload evidence clip snippet
     evidence_clip_path = None
@@ -168,18 +219,32 @@ async def handle_match_found(session_id: str, contract_id: str, matched_title: s
             }
             supabase.table("broadcast_logs").insert(log_row).execute()
             logger.info(f"Inserted broadcast log for matched airing: {log_row['air_date']} {log_row['air_time']}")
-            
-            # 4. Trigger auto-reconciliation
-            await run_auto_reconciliation(contract_id)
+            return True
     except Exception as e:
-        logger.error(f"Failed to insert broadcast log / run reconciliation: {e}")
+        logger.error(f"Failed to insert broadcast log: {e}")
+    return False
 
 
-async def check_missed_airings(session_id: str, contract_id: str) -> None:
+async def handle_match_found(session_id: str, contract_id: str, matched_title: str, confidence: float, offset_seconds: float, file_path: str) -> None:
     """
-    Checks if a contract's expected airing time window has closed without a recorded match.
-    If yes, logs a MISSED discrepancy directly.
+    Saves the live match to the database, uploads the evidence snippet,
+    inserts a broadcast log row, and runs auto-reconciliation.
     """
+    should_reconcile = await asyncio.to_thread(
+        _record_match_sync,
+        session_id,
+        contract_id,
+        matched_title,
+        confidence,
+        offset_seconds,
+        file_path,
+        datetime.now(),
+    )
+    if should_reconcile:
+        await run_auto_reconciliation(contract_id)
+
+
+def _check_missed_airings_sync(session_id: str, contract_id: str) -> None:
     try:
         supabase = get_supabase_client()
         contract_resp = supabase.table("contracts").select("*").eq("id", contract_id).single().execute()
@@ -253,6 +318,14 @@ async def check_missed_airings(session_id: str, contract_id: str) -> None:
         logger.error(f"Error checking missed airings for contract {contract_id}: {e}")
 
 
+async def check_missed_airings(session_id: str, contract_id: str) -> None:
+    """
+    Checks if a contract's expected airing time window has closed without a recorded match.
+    If yes, logs a MISSED discrepancy directly.
+    """
+    await asyncio.to_thread(_check_missed_airings_sync, session_id, contract_id)
+
+
 async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str) -> None:
     """
     Loops checking for WAV segments, runs recognition on them, deletes them,
@@ -268,7 +341,9 @@ async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str)
     # Fetch contract organization_id for organization scoping
     organization_id = None
     try:
-        contract_resp = supabase.table("contracts").select("organization_id").eq("id", contract_id).single().execute()
+        contract_resp = await asyncio.to_thread(
+            supabase.table("contracts").select("organization_id").eq("id", contract_id).single().execute
+        )
         if contract_resp.data:
             organization_id = str(contract_resp.data["organization_id"])
     except Exception as e:
@@ -277,7 +352,9 @@ async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str)
     try:
         while True:
             # 1. Fetch current status from DB
-            session_resp = supabase.table("live_sessions").select("status", "youtube_url").eq("id", session_id).execute()
+            session_resp = await asyncio.to_thread(
+                supabase.table("live_sessions").select("status", "youtube_url").eq("id", session_id).execute
+            )
             if not session_resp.data:
                 logger.error(f"Session {session_id} not found in DB. Exiting loop.")
                 break
@@ -289,7 +366,11 @@ async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str)
             elapsed = asyncio.get_event_loop().time() - start_time
             if elapsed >= max_duration:
                 logger.info(f"Live verification session {session_id} hit max duration limit. Auto-stopping.")
-                supabase.table("live_sessions").update({"status": "stopped", "ended_at": datetime.now().isoformat()}).eq("id", session_id).execute()
+                await asyncio.to_thread(
+                    supabase.table("live_sessions")
+                    .update({"status": "stopped", "ended_at": datetime.now().isoformat()})
+                    .eq("id", session_id).execute
+                )
                 break
 
             # 3. Check ffmpeg process status
@@ -320,11 +401,13 @@ async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str)
                         continue
                 else:
                     logger.error(f"Exceeded 3 reconnect retries. Marking session {session_id} as error.")
-                    supabase.table("live_sessions").update({
-                        "status": "error",
-                        "error_message": "Stream dropped and reconnection retries were exhausted.",
-                        "ended_at": datetime.now().isoformat()
-                    }).eq("id", session_id).execute()
+                    await asyncio.to_thread(
+                        supabase.table("live_sessions").update({
+                            "status": "error",
+                            "error_message": "Stream dropped and reconnection retries were exhausted.",
+                            "ended_at": datetime.now().isoformat()
+                        }).eq("id", session_id).execute
+                    )
                     break
 
             # 4. Search and process files
@@ -403,11 +486,18 @@ async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str)
 
     except Exception as e:
         logger.exception(f"Unexpected error in background monitor loop for session {session_id}")
-        supabase.table("live_sessions").update({
-            "status": "error",
-            "error_message": f"Unexpected monitor error: {e}",
-            "ended_at": datetime.now().isoformat()
-        }).eq("id", session_id).execute()
+        try:
+            await asyncio.to_thread(
+                supabase.table("live_sessions").update({
+                    "status": "error",
+                    "error_message": f"Unexpected monitor error: {e}",
+                    "ended_at": datetime.now().isoformat()
+                }).eq("id", session_id).execute
+            )
+        except Exception:
+            # Never let the error-reporting write mask the original failure,
+            # and never leave the finally-block cleanup unreached.
+            logger.exception(f"Also failed to mark session {session_id} as error")
     finally:
         # Delete process registration
         active_processes.pop(session_id, None)
@@ -419,7 +509,39 @@ async def monitor_session_loop(session_id: str, contract_id: str, temp_dir: str)
             logger.error(f"Failed to delete temp dir {temp_dir}: {e}")
 
 
-async def start_ffmpeg_process(manifest_url: str, temp_dir: str) -> asyncio.subprocess.Process:
+class FFmpegProcess:
+    """
+    Thin adapter over subprocess.Popen exposing the slice of
+    asyncio.subprocess.Process that this module relies on.
+
+    asyncio.create_subprocess_exec can't be used here: under --reload uvicorn
+    manages its own worker subprocesses, and uvicorn.loops.asyncio then selects
+    SelectorEventLoop — which on Windows raises a bare NotImplementedError for
+    any subprocess creation. Popen is loop-independent, so live capture behaves
+    the same in Windows dev and Linux production.
+    """
+
+    def __init__(self, popen: subprocess.Popen) -> None:
+        self._popen = popen
+
+    @property
+    def pid(self) -> int:
+        return self._popen.pid
+
+    @property
+    def returncode(self) -> int | None:
+        # Popen only refreshes returncode when polled, unlike the asyncio
+        # Process whose transport updates it on exit.
+        return self._popen.poll()
+
+    def terminate(self) -> None:
+        self._popen.terminate()
+
+    async def wait(self) -> int:
+        return await asyncio.to_thread(self._popen.wait)
+
+
+async def start_ffmpeg_process(manifest_url: str, temp_dir: str) -> FFmpegProcess:
     """
     Launches an ffmpeg subprocess to read the manifest stream and output wav chunks.
     """
@@ -434,11 +556,13 @@ async def start_ffmpeg_process(manifest_url: str, temp_dir: str) -> asyncio.subp
         "-segment_format", "wav",
         os.path.join(temp_dir, "chunk_%05d.wav")
     ]
-    return await asyncio.create_subprocess_exec(
-        *ffmpeg_cmd,
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL
+    popen = await asyncio.to_thread(
+        subprocess.Popen,
+        ffmpeg_cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
+    return FFmpegProcess(popen)
 
 
 async def start_live_verification_session(youtube_url: str, contract_id: str, user_id: str | None) -> str:
@@ -458,7 +582,7 @@ async def start_live_verification_session(youtube_url: str, contract_id: str, us
         "started_at": datetime.now().isoformat(),
         "user_id": user_id
     }
-    insert_resp = supabase.table("live_sessions").insert(session_row).execute()
+    insert_resp = await asyncio.to_thread(supabase.table("live_sessions").insert(session_row).execute)
     if not insert_resp.data:
         raise RuntimeError("Failed to create live session in database.")
     session = insert_resp.data[0]
@@ -478,7 +602,9 @@ async def start_live_verification_session(youtube_url: str, contract_id: str, us
         }
 
         # 6. Mark status as running
-        supabase.table("live_sessions").update({"status": "running"}).eq("id", session_id).execute()
+        await asyncio.to_thread(
+            supabase.table("live_sessions").update({"status": "running"}).eq("id", session_id).execute
+        )
 
         # 7. Launch background task
         task = asyncio.create_task(monitor_session_loop(session_id, contract_id, temp_dir))
@@ -486,11 +612,14 @@ async def start_live_verification_session(youtube_url: str, contract_id: str, us
 
         return session_id
     except Exception as e:
-        supabase.table("live_sessions").update({
-            "status": "error",
-            "error_message": str(e),
-            "ended_at": datetime.now().isoformat()
-        }).eq("id", session_id).execute()
+        logger.exception(f"Failed to start live verify capture for session {session_id}")
+        await asyncio.to_thread(
+            supabase.table("live_sessions").update({
+                "status": "error",
+                "error_message": str(e),
+                "ended_at": datetime.now().isoformat()
+            }).eq("id", session_id).execute
+        )
         shutil.rmtree(temp_dir, ignore_errors=True)
         active_processes.pop(session_id, None)
         raise RuntimeError(f"Failed to start live verify capture: {e}") from e
@@ -503,10 +632,12 @@ async def stop_live_verification_session(session_id: str) -> None:
     supabase = get_supabase_client()
     
     # Update status to stopped
-    supabase.table("live_sessions").update({
-        "status": "stopped",
-        "ended_at": datetime.now().isoformat()
-    }).eq("id", session_id).execute()
+    await asyncio.to_thread(
+        supabase.table("live_sessions").update({
+            "status": "stopped",
+            "ended_at": datetime.now().isoformat()
+        }).eq("id", session_id).execute
+    )
 
     proc_handle = active_processes.get(session_id)
     if proc_handle:
@@ -590,7 +721,9 @@ async def run_live_scheduler_tick() -> None:
     try:
         supabase = get_supabase_client()
         # Query contracts with scheduler URL
-        contracts_resp = supabase.table("contracts").select("*").not_.is_("live_source_url", "null").execute()
+        contracts_resp = await asyncio.to_thread(
+            supabase.table("contracts").select("*").not_.is_("live_source_url", "null").execute
+        )
         contracts = contracts_resp.data or []
 
         now = datetime.now()
@@ -621,12 +754,12 @@ async def run_live_scheduler_tick() -> None:
             stop_window = expected_datetime + timedelta(minutes=tolerance_minutes + 5)
 
             # Query any existing session for this contract started today
-            sessions_resp = (
+            sessions_resp = await asyncio.to_thread(
                 supabase.table("live_sessions")
                 .select("*")
                 .eq("contract_id", contract["id"])
                 .gte("started_at", today.isoformat())
-                .execute()
+                .execute
             )
             sessions = sessions_resp.data or []
             active_session = next((s for s in sessions if s["status"] in ("starting", "running")), None)

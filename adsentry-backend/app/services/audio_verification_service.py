@@ -35,6 +35,14 @@ def _get_dejavu() -> Dejavu:
         ) from exc
 
 
+def _rollback_dejavu_session(djv: Dejavu) -> None:
+    """Return the shared Dejavu session to a usable state after a failed flush."""
+    try:
+        djv.db.session.rollback()
+    except Exception:
+        logger.exception("Could not roll back the Dejavu session")
+
+
 def fingerprint_recording(file_path: str, title: str, organization_id: str) -> None:
     """
     Adds a long recording into Dejavu's fingerprint database under the given
@@ -43,24 +51,19 @@ def fingerprint_recording(file_path: str, title: str, organization_id: str) -> N
     content is a no-op (Dejavu keys on the file's content hash).
     """
     djv = _get_dejavu()
-    djv.fingerprint_file(file_path, song_name=title, organization_id=organization_id)
+    try:
+        djv.fingerprint_file(file_path, song_name=title, organization_id=organization_id)
+    except Exception:
+        # _get_dejavu() is lru_cached, so its SQLAlchemy session outlives this
+        # call. A failed flush leaves the session in a rolled-back state where
+        # every later query raises PendingRollbackError — i.e. one bad
+        # fingerprint would break audio verification until the next restart.
+        _rollback_dejavu_session(djv)
+        raise
 
 
-def download_youtube_audio(youtube_url: str, output_path: str) -> str:
-    """
-    Downloads just the audio track of a YouTube video to `{output_path}.wav`
-    via yt-dlp + ffmpeg, returning the final file path.
-    """
-    import shutil
-    if not shutil.which("ffmpeg"):
-        raise RuntimeError(
-            "Download failed: ffmpeg is missing. The system requires ffmpeg to extract "
-            "and convert audio from YouTube videos. Please make sure ffmpeg is installed and on PATH."
-        )
-
-    import yt_dlp
-
-    ydl_opts = {
+def _ydl_opts(output_path: str, use_cookies: bool) -> dict[str, Any]:
+    opts: dict[str, Any] = {
         "format": "bestaudio/best",
         "outtmpl": output_path + ".%(ext)s",
         "postprocessors": [
@@ -75,11 +78,80 @@ def download_youtube_audio(youtube_url: str, output_path: str) -> str:
         "noplaylist": True,
         "extractor_args": {"youtube": {"player_client": ["android"]}},
     }
+    if use_cookies and settings.ytdlp_cookies_path is not None:
+        opts["cookiefile"] = settings.ytdlp_cookies_path
+    return opts
+
+
+def _run_with_cookie_fallback(action, output_path: str):
+    """
+    Runs a yt-dlp action, preferring a cookie-authenticated session (needed to
+    dodge YouTube's bot-detection on cloud IPs). Some authenticated sessions
+    are served SABR-only formats for certain videos that yt-dlp can't parse
+    yet ("No video formats found") — that specific failure is unrelated to
+    cookie validity, so retry once without cookies rather than failing.
+    """
+    import yt_dlp
+
+    use_cookies = settings.ytdlp_cookies_path is not None
+    try:
+        with yt_dlp.YoutubeDL(_ydl_opts(output_path, use_cookies=use_cookies)) as ydl:
+            return action(ydl)
+    except Exception as exc:
+        if use_cookies and "No video formats found" in str(exc):
+            logger.warning("yt-dlp failed with cookies (%s); retrying without cookies.", exc)
+            with yt_dlp.YoutubeDL(_ydl_opts(output_path, use_cookies=False)) as ydl:
+                return action(ydl)
+        raise
+
+
+def download_youtube_audio(youtube_url: str, output_path: str) -> str:
+    """
+    Downloads just the audio track of a YouTube video to `{output_path}.wav`
+    via yt-dlp + ffmpeg, returning the final file path.
+    """
+    import shutil
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError(
+            "Download failed: ffmpeg is missing. The system requires ffmpeg to extract "
+            "and convert audio from YouTube videos. Please make sure ffmpeg is installed and on PATH."
+        )
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([youtube_url])
+        info = _run_with_cookie_fallback(
+            lambda ydl: ydl.extract_info(youtube_url, download=False), output_path
+        )
     except Exception as exc:
+        exc_str = str(exc)
+        if "Sign in to confirm" in exc_str or "not a bot" in exc_str:
+            raise RuntimeError(
+                "Download failed — YouTube is blocking this server's IP and requires a signed-in "
+                "session. Set YTDLP_COOKIES_CONTENT or YTDLP_COOKIES_FILE in the environment "
+                "(see .env.example)."
+            ) from exc
+        raise RuntimeError(
+            f"Download failed — the URL may be invalid, geo-blocked, or unavailable ({exc})"
+        ) from exc
+
+    # A live broadcast never finishes downloading — yt-dlp will read the HLS
+    # stream indefinitely, hanging this request forever. Reject it up front
+    # and point the user at the Live Monitor flow instead.
+    if info and (info.get("is_live") or info.get("live_status") == "is_live"):
+        raise RuntimeError(
+            "This URL is a live broadcast, which can't be downloaded as a fixed source clip. "
+            "Use the Live YouTube Monitor instead."
+        )
+
+    try:
+        _run_with_cookie_fallback(lambda ydl: ydl.download([youtube_url]), output_path)
+    except Exception as exc:
+        exc_str = str(exc)
+        if "Sign in to confirm" in exc_str or "not a bot" in exc_str:
+            raise RuntimeError(
+                "Download failed — YouTube is blocking this server's IP and requires a signed-in "
+                "session. Set YTDLP_COOKIES_CONTENT or YTDLP_COOKIES_FILE in the environment "
+                "(see .env.example)."
+            ) from exc
         raise RuntimeError(
             f"Download failed — the URL may be invalid, geo-blocked, or unavailable ({exc})"
         ) from exc
@@ -120,6 +192,7 @@ def has_fingerprinted_sources(organization_id: str) -> bool:
         exc_str = str(exc)
         if "database connection failed" in exc_str or "ffmpeg is missing" in exc_str:
             raise exc
+        _rollback_dejavu_session(_get_dejavu())
         logger.error("Could not check for fingerprinted sources: %s", exc)
         return False
 
@@ -161,6 +234,7 @@ def recognize_clip(clip_file_path: str, organization_id: str) -> dict[str, Any] 
         exc_str = str(exc)
         if "database connection failed" in exc_str or "ffmpeg is missing" in exc_str:
             raise exc
+        _rollback_dejavu_session(_get_dejavu())
         logger.error("Dejavu recognition failed for '%s': %s", clip_file_path, exc)
         return None
 

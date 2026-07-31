@@ -1,4 +1,5 @@
 import logging
+import tempfile
 from pathlib import Path
 
 from pydantic import Field
@@ -34,6 +35,14 @@ class Settings(BaseSettings):
     # service-role-authenticated ORM path used elsewhere in the app.
     dejavu_database_url: str = ""
 
+    # yt-dlp cookie-based auth: lets the server authenticate to YouTube as a
+    # logged-in session so datacenter/cloud IPs aren't flagged with "Sign in
+    # to confirm you're not a bot". Set one of the two — content takes
+    # priority if both are set. See .env.example for how to obtain a
+    # cookies.txt.
+    ytdlp_cookies_file: str = ""
+    ytdlp_cookies_content: str = ""
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",
         env_file_encoding="utf-8",
@@ -43,6 +52,23 @@ class Settings(BaseSettings):
     @property
     def trusted_hosts_list(self) -> list[str]:
         return [host.strip() for host in self.trusted_hosts.split(",") if host.strip()]
+
+    @property
+    def ytdlp_cookies_path(self) -> str | None:
+        """
+        Resolves a cookies.txt path for yt-dlp's `cookiefile` option, from
+        either raw content (e.g. an env var) or a path to a file already on
+        disk. Returns None if neither is configured.
+        """
+        if self.ytdlp_cookies_content:
+            cookies_path = Path(tempfile.gettempdir()) / "adsentry_ytdlp_cookies.txt"
+            existing = cookies_path.read_text(encoding="utf-8") if cookies_path.exists() else None
+            if existing != self.ytdlp_cookies_content:
+                cookies_path.write_text(self.ytdlp_cookies_content, encoding="utf-8")
+            return str(cookies_path)
+        if self.ytdlp_cookies_file:
+            return self.ytdlp_cookies_file
+        return None
 
     def validate_secrets(self) -> None:
         """
